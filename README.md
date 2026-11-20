@@ -7,6 +7,7 @@ Express API + Supabase backend, mock OTP/WhatsApp for local development.
   12-status case state machine, permission matrix, notification matrix N-01..N-14.
 - **Decision log:** every implementation decision is recorded in [`decisions.md`](decisions.md) (DEC-001..042).
 - **Build plan:** [`PLAN.md`](PLAN.md) — 10 phases, all complete.
+- **Team testing guide:** [`TESTING.md`](TESTING.md) — friendly step-by-step flow tests aligned to the user stories, for manual QA and gap reporting.
 
 ## Architecture
 
@@ -128,6 +129,7 @@ client/                React client: pages (patient/staff/admin/review), lib, co
   e2e/                 Playwright sessions + helpers
   e2e-shots/           per-step screenshots
 decisions.md           DEC-001..042 — every decision, with rationale
+TESTING.md             team flow-testing guide (user-story aligned)
 PLAN.md                10-phase build plan + verification results
 ```
 
