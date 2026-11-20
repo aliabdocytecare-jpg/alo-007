@@ -1,0 +1,54 @@
+/* AloDoc Phase 1 — monochrome text UI (DEC-004). Visual layer comes later. */
+* { box-sizing: border-box; }
+:focus-visible { outline: 2px solid #000; outline-offset: 2px; }
+body { margin: 0; background: #fff; color: #000; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 14px; line-height: 1.5; }
+a { color: #000; }
+.wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
+header.top { border-bottom: 2px solid #000; padding: 10px 16px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+header.top .brand { font-weight: 700; font-size: 18px; letter-spacing: 2px; text-decoration: none; }
+header.top nav { display: flex; gap: 12px; flex-wrap: wrap; }
+header.top .spacer { flex: 1; }
+button, .btn { background: #fff; color: #000; border: 1px solid #000; padding: 6px 12px; font: inherit; cursor: pointer; text-decoration: none; display: inline-block; }
+button:hover, .btn:hover { background: #000; color: #fff; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button:disabled:hover { background: #fff; color: #000; }
+input, select, textarea { font: inherit; border: 1px solid #000; background: #fff; color: #000; padding: 6px; width: 100%; }
+input[type="checkbox"] { width: auto; }
+textarea { min-height: 90px; }
+label { display: block; margin: 10px 0 2px; font-weight: 700; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+th, td { border: 1px solid #000; padding: 6px 8px; text-align: start; vertical-align: top; }
+th { background: #000; color: #fff; }
+section.box { border: 1px solid #000; padding: 12px; margin: 12px 0; }
+h1 { font-size: 20px; border-bottom: 1px solid #000; padding-bottom: 6px; }
+h2 { font-size: 16px; margin: 12px 0 6px; }
+h3 { font-size: 14px; margin: 10px 0 4px; }
+.badge { border: 1px solid #000; padding: 1px 8px; font-weight: 700; white-space: nowrap; }
+.msg { border: 1px solid #000; padding: 8px; margin: 8px 0; }
+.msg.err::before { content: "[ERROR] "; font-weight: 700; }
+.msg.ok::before { content: "[OK] "; font-weight: 700; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
+.card { border: 2px solid #000; padding: 20px; text-decoration: none; display: block; }
+.card:hover { background: #000; color: #fff; }
+.card h2 { margin-top: 0; }
+details { border: 1px solid #000; margin: 8px 0; }
+details summary { cursor: pointer; padding: 8px; font-weight: 700; }
+details[open] summary { border-bottom: 1px solid #000; }
+details .inner { padding: 8px; }
+.timeline { list-style: none; padding: 0; margin: 8px 0; }
+.timeline li { border-inline-start: 2px solid #000; padding: 4px 12px; margin: 4px 0; }
+.muted { opacity: 0.7; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 640px) {
+  .grid2 { grid-template-columns: 1fr; }
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+.tabs { display: flex; gap: 0; margin: 12px 0; flex-wrap: wrap; }
+.tabs button { border-inline-end: none; }
+.tabs button:last-child { border-inline-end: 1px solid #000; }
+.tabs button.active { background: #000; color: #fff; }
+pre.report { white-space: pre-wrap; border: 1px solid #000; padding: 12px; font-family: inherit; }
+.docframe { width: 100%; height: 420px; border: 1px solid #000; }
+.docimg { max-width: 100%; border: 1px solid #000; }
+@media print { header.top, nav, button, .no-print { display: none !important; } }

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+server/.data/
+server/.local-storage/
+*.sqlite
+*.log
+.DS_Store
+
+# Test artifacts (regenerable via npm run test:ui)
+client/test-results/
+client/playwright-report/
+client/e2e-shots/
+step*.png
