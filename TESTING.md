@@ -70,6 +70,12 @@ one and a staff member in the other at the same time.
 ### Flow 1 — A patient joins and signs in ✅
 **Stories:** `US-PAT-001` (register), `US-PAT-002` (sign-in + lockout)
 
+> ⚠️ **#1 thing testers get stuck on:** patients and staff log in differently.
+> Staff accounts already exist, so they sign straight in. **A patient with a NEW number must
+> REGISTER first** — after Send OTP the form shows *"New here? Create your patient account"*.
+> Enter `123456`, fill **Full name (required)**, then press **Register** (not "Verify").
+> If you only type phone + OTP and look for a login button, you'll see *"Full name is required."*
+
 **Steps**
 1. Go to http://localhost:5173 → you land on the login page.
 2. Type a phone, e.g. `+966512345678` → click **Send OTP**.
@@ -89,6 +95,13 @@ one and a staff member in the other at the same time.
 - Try a badly-formed phone (letters, too short) — is the error friendly?
 - **Lockout:** sign in with a wrong OTP (`000000`) **5 times**. The 6th attempt should say
   "Account temporarily locked…". (Use a throwaway number so you don't lock yourself out.)
+
+**Troubleshooting (if a patient "can't get in")**
+- *"Full name is required"* → it's a new number; fill the name and press **Register**.
+- *"Enter a valid phone number in international format"* → include `+` and country code, e.g. `+966512345678`.
+- *"Too many OTP requests"* → more than 5 Send-OTP clicks in an hour on that number; wait or use a new number.
+- *"Account temporarily locked"* → 5 wrong OTPs earlier; wait 15 minutes or use a different number.
+- *"No account with this number. Please register."* → you pressed Verify on a number that was never registered; go Back and Register.
 
 ---
 

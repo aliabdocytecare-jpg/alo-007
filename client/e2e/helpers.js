@@ -16,6 +16,7 @@ export async function registerPatient(page, { name, phone, gender = 'FEMALE', la
   await page.getByPlaceholder('+9665XXXXXXXX').fill(phone);
   await page.getByRole('button', { name: /Send OTP|إرسال الرمز/ }).click();
   await expect(page.getByText(/Mock mode active|الوضع التجريبي/)).toBeVisible();
+  await expect(page.getByText(/Create your patient account|أنشئ حساب مريض/)).toBeVisible(); // DEC-043: new-patient register state is explicit
   await page.locator('input[maxlength="6"]').fill('123456');
   await page.locator('section.box input').nth(2).fill(name);
   await page.locator('input[type="date"]').fill('1990-01-01');

@@ -71,16 +71,20 @@ export default function Login() {
           <Field label={t('phone')}>
             <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+9665XXXXXXXX" dir="ltr" disabled={otpSent} />
           </Field>
+          {!otpSent && <p className="muted" style={{ marginTop: 4 }}>{t('phoneHint')}</p>}
           {!otpSent && <div className="row" style={{ marginTop: 10 }}><button onClick={sendOtp} disabled={busy || !phone}>{t('sendOtp')}</button></div>}
           {otpSent && (
             <>
+              {/* DEC-043: make the register-vs-sign-in state explicit — new patients must register. */}
+              <h2>{exists ? t('returningPatientHeading') : t('newPatientHeading')}</h2>
+              {!exists && <p className="muted">{t('newPatientHint')}</p>}
               {mock && <p className="muted">{t('mockHint')}</p>}
               <Field label={t('otp')}>
                 <input value={otp} onChange={e => setOtp(e.target.value)} dir="ltr" maxLength={6} />
               </Field>
               {!exists && (
                 <>
-                  <Field label={t('fullName')}><input value={reg.full_name} onChange={e => setReg({ ...reg, full_name: e.target.value })} /></Field>
+                  <Field label={`${t('fullName')} *`}><input value={reg.full_name} onChange={e => setReg({ ...reg, full_name: e.target.value })} /></Field>
                   <div className="grid2">
                     <Field label={t('dob')}><input type="date" value={reg.dob} onChange={e => setReg({ ...reg, dob: e.target.value })} /></Field>
                     <Field label={t('gender')}>

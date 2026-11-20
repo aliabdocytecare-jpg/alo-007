@@ -216,3 +216,8 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Decision:** API check E15 backdates SLA/reminder/appointment timestamps in the dev SQLite (DEC-023 pattern), waits one tick cycle, and asserts N-12 coordinator alert, N-10 patient reminder, and auto IN_PROGRESS. Skipped with a notice on real Supabase.
 - **Rationale:** The tick jobs were implemented but unproven (timing-based). E15 makes the notification matrix's time-driven rows verifiable without waiting 24h. Suite now 71 checks.
 - **Reference:** N-10, N-12, Part 5 auto-transition, DEC-023.
+
+## DEC-043 — Explicit patient register-vs-sign-in state
+- **Decision:** The patient login now shows a clear heading ("New here? Create your patient account" vs "Welcome back — enter your OTP"), a hint that new numbers must register with a required Full name, a persistent international-phone-format hint, and a `*` on Full name. EN/AR keys added; patient-entry suite asserts the new-patient heading.
+- **Rationale:** Team testing reported "everyone logs in with 123456 except patients." Reproduced via API: patient registration works, but a NEW number silently switches to a Register form requiring Full name — testers entered phone+OTP expecting staff-style login and hit "Full name is required" / phone-format errors (and sometimes the 5-OTP/hour cap). Staff are pre-seeded so they never see this. The state is now self-explanatory for real patients too.
+- **Reference:** US-PAT-001/002, P3 No Dead Ends; team feedback Nov 21.
