@@ -130,6 +130,35 @@ async function seedStaff() {
   }
 }
 
+// DEC-044: 20 ready-to-use test patients (+966500001001..+966500001020), dev/mock only.
+// Lets the team sign in immediately (OTP 123456 -> Verify & Sign In) without registering each time.
+async function seedTestPatients() {
+  const names = [
+    ['Hessa Al-Rashidi', 'FEMALE', 'ar'], ['Mohammed Al-Qahtani', 'MALE', 'en'],
+    ['Sara Al-Otaibi', 'FEMALE', 'en'], ['Abdullah Al-Ghamdi', 'MALE', 'ar'],
+    ['Noura Al-Harbi', 'FEMALE', 'en'], ['Khalid Al-Zahrani', 'MALE', 'en'],
+    ['Fatima Al-Shehri', 'FEMALE', 'ar'], ['Omar Al-Dossari', 'MALE', 'en'],
+    ['Layla Al-Mutairi', 'FEMALE', 'en'], ['Yusuf Al-Anazi', 'MALE', 'ar'],
+    ['Aisha Al-Subaie', 'FEMALE', 'en'], ['Hassan Al-Shammari', 'MALE', 'en'],
+    ['Mariam Al-Qahtani', 'FEMALE', 'ar'], ['Tariq Al-Harthy', 'MALE', 'en'],
+    ['Reem Al-Balawi', 'FEMALE', 'en'], ['Faisal Al-Malki', 'MALE', 'ar'],
+    ['Dana Al-Saud', 'FEMALE', 'en'], ['Sami Al-Juhani', 'MALE', 'en'],
+    ['Lina Al-Fahad', 'FEMALE', 'ar'], ['Bandar Al-Rashid', 'MALE', 'en']
+  ];
+  let added = 0;
+  for (let i = 0; i < names.length; i++) {
+    const [full_name, gender, lang] = names[i];
+    const phone = `+9665000010${String(i + 1).padStart(2, '0')}`;
+    const { data } = await db.from('patients').select().eq('phone', phone).maybeSingle();
+    if (!data) {
+      const dob = `${1980 + (i % 15)}-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`;
+      await db.from('patients').insert({ phone, full_name, gender, dob, nationality: 'Saudi', preferred_lang: lang });
+      added++;
+    }
+  }
+  if (added) console.log(`Seeded ${added} test patients (+966500001001..+966500001020)`);
+}
+
 // ---- Background jobs: N-12 SLA breach, N-10 T-24h reminder, auto IN_PROGRESS ----
 async function tick() {
   try {
@@ -164,7 +193,7 @@ app.listen(PORT, async () => {
   console.log(`AloDoc API on http://localhost:${PORT} (driver: ${IS_LOCAL ? 'local-embedded' : 'supabase'})`);
   // DEC-039: known-password demo accounts are dev-only. Production bootstraps via
   // scripts/create-admin.mjs, then the admin creates staff through the console.
-  if (IS_LOCAL || process.env.ENABLE_MOCK_AUTH === 'true') await seedStaff();
+  if (IS_LOCAL || process.env.ENABLE_MOCK_AUTH === 'true') { await seedStaff(); await seedTestPatients(); }
   else console.log('Production mode: demo staff seeding skipped. Bootstrap: node scripts/create-admin.mjs');
   setInterval(tick, 60_000);
   tick();

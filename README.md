@@ -26,7 +26,7 @@ zero Docker required (DEC-001/002).
 ## Quick start (local, no Supabase needed)
 
 ```bash
-# 1. API (auto-creates schema + seeds staff on first boot)
+# 1. API (auto-creates schema + seeds staff & 20 test patients on first boot)
 cd server && npm install && npm run dev        # http://localhost:3000
 
 # 2. Client
@@ -44,6 +44,10 @@ cd client && npm install && npm run dev        # http://localhost:5173
 
 Patients: any phone → **mock OTP `123456`** (PIN `1234` where asked). Mock WhatsApp
 messages are printed to the server log, including specialist magic links.
+
+**20 ready-made test patients (DEC-044):** `+966500001001` … `+966500001020` are pre-seeded
+(local only) — sign in with OTP `123456` → *Verify & Sign In*, no registration. Use any other
+number to test the registration flow. All entered data persists in `server/.data/alodoc.sqlite`.
 
 ## Tests
 

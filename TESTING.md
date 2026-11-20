@@ -53,6 +53,22 @@ one and a staff member in the other at the same time.
    | Nurse | `nurse@alodoc.com` | `Nurse@12345` |
 
    Staff sign-in: on the login page click **"Staff sign-in"**, then email + password.
+
+   **Ready-made test patients (no registration needed):** 20 patients are pre-created in local
+   mode, numbers **`+966500001001` through `+966500001020`**. Sign in with any of them + OTP
+   `123456` → you'll see *"Welcome back"* → **Verify & Sign In** (straight in, no form).
+   Handy for assigning different testers different patients, e.g.:
+
+   | Phone | Name | Lang |
+   |-------|------|------|
+   | `+966500001001` | Hessa Al-Rashidi | ar |
+   | `+966500001002` | Mohammed Al-Qahtani | en |
+   | `+966500001003` | Sara Al-Otaibi | en |
+   | … | … (20 total, alternating EN/AR) | … |
+   | `+966500001020` | Bandar Al-Rashid | en |
+
+   These exist only in local/dev mode (never in production). To test the *registration* flow
+   itself (Flow 1), use any **other** number not in this series.
 3. **Magic links & WhatsApp live in the server terminal.** When a coordinator assigns an
    international specialist, Terminal 1 prints a line like:
    `[WhatsApp mock -> specialist...] ... Open secure case: http://localhost:5173/review/XXXX`

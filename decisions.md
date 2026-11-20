@@ -221,3 +221,8 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Decision:** The patient login now shows a clear heading ("New here? Create your patient account" vs "Welcome back — enter your OTP"), a hint that new numbers must register with a required Full name, a persistent international-phone-format hint, and a `*` on Full name. EN/AR keys added; patient-entry suite asserts the new-patient heading.
 - **Rationale:** Team testing reported "everyone logs in with 123456 except patients." Reproduced via API: patient registration works, but a NEW number silently switches to a Register form requiring Full name — testers entered phone+OTP expecting staff-style login and hit "Full name is required" / phone-format errors (and sometimes the 5-OTP/hour cap). Staff are pre-seeded so they never see this. The state is now self-explanatory for real patients too.
 - **Reference:** US-PAT-001/002, P3 No Dead Ends; team feedback Nov 21.
+
+## DEC-044 — 20 pre-seeded test patients (dev/mock only)
+- **Decision:** On local/mock boot, seed 20 patients with phones `+966500001001..+966500001020` (varied names, gender, EN/AR preference, valid DOB), idempotent by phone. Guarded by the same IS_LOCAL/ENABLE_MOCK_AUTH gate as staff (DEC-039) — never created in production. Documented in TESTING.md.
+- **Rationale:** Team wanted ready patients to test all flows without registering each time. Seeded patients sign in directly (OTP 123456 → Verify), and give each tester a distinct patient. Registration flow remains testable with any number outside the series. Confirmed entered data persists in the local SQLite DB (patients/cases/documents tables).
+- **Reference:** US-PAT-001, DEC-039, team request Nov 21.
