@@ -18,8 +18,10 @@ const fullName = (process.env.ADMIN_NAME || 'Administrator').trim();
 const fail = msg => { console.error(`ERROR: ${msg}`); process.exit(1); };
 
 if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail('ADMIN_EMAIL must be a valid email address.');
-if (password.length < 12 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {
-  fail('ADMIN_PASSWORD must be at least 12 characters with lowercase, uppercase and a digit.');
+// DEC-048: same policy as staff creation (adminController PW_RE) — 10+ chars with
+// uppercase, digit and special character. Keeps bootstrap consistent with the console.
+if (!/^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{10,}$/.test(password)) {
+  fail('ADMIN_PASSWORD must be at least 10 characters with 1 uppercase letter, 1 number, and 1 special character.');
 }
 if (['Admin@12345', 'Coord@12345', 'Doctor@12345', 'Nurse@12345'].includes(password)) {
   fail('Refusing a known demo password. Choose a unique strong password.');
