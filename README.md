@@ -121,23 +121,39 @@ in `client/test-results/`.
    via the Admin console. The **last active admin cannot be deactivated** (lockout protection).
 5. Wire real WhatsApp Cloud API credentials (DEC-009) and restart.
 
-## Deployment path
+## Deployment path (LIVE — DEC-049/050)
 
-Mac → GitHub → Ubuntu: PM2 for the Express API, Nginx serving `client/dist`
-(`npm run build`) and proxying `/api` to :3000. Supabase Cloud for data/storage.
+Production runs as **one Coolify application** on the dedicated VPS, same-origin:
+
+```
+Cloudflare (alodoc.online, proxied A record → VPS, CDN + TLS)
+   └─ Traefik (Coolify proxy, Let's Encrypt) → Coolify app container
+        └─ Express serves React build (client/dist) + /api  [Dockerfile, multi-stage]
+             └─ Supabase Cloud (database + storage)
+```
+
+- **Domain:** https://alodoc.online (frontend + API, same origin — no CORS/cookie gymnastics).
+- **Hosting:** Coolify app `alodoc` (Dockerfile build pack, port 3000, health check `/health`).
+  Auto-restart + **push-to-deploy** via a GitHub webhook on `aliabdocytecare-jpg/alo-007`.
+- **Data:** Supabase Cloud project `ovkxuzstzgixjtvkhadf` (clean; one Super Admin bootstrapped).
+- **Env (in Coolify):** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `NODE_ENV=production`,
+  `JWT_SECRET` (random 32B), `ENABLE_MOCK_AUTH=false`, `ENABLE_MOCK_WHATSAPP=false`,
+  `CLIENT_ORIGIN=https://alodoc.online`. See `server/.env.production.example`.
+- **Redeploy:** `git push` to `main` → webhook → Coolify rebuilds + rolls out (zero downtime).
+- Patient self-registration needs a real SMS OTP provider (mock is off in production).
 
 ## Repository layout
 
 ```
 supabase/migrations/   SQL schema + seed (production source of truth)
 server/                Express API: controllers, services, middleware, drivers
-  scripts/e2e.mjs      Bible Tests A–E (67 checks)
+  scripts/e2e.mjs      Bible Tests A–E (72 checks)
   .data/               local SQLite (dev only, gitignored)
   .local-storage/      local file storage (dev only, gitignored)
 client/                React client: pages (patient/staff/admin/review), lib, components
   e2e/                 Playwright sessions + helpers
   e2e-shots/           per-step screenshots
-decisions.md           DEC-001..042 — every decision, with rationale
+decisions.md           DEC-001..050 — every decision, with rationale
 TESTING.md             team flow-testing guide (user-story aligned)
 PLAN.md                10-phase build plan + verification results
 ```
