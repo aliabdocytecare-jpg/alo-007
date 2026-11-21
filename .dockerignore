@@ -1,0 +1,21 @@
+# Keep the Docker build context small and secret-free.
+node_modules
+**/node_modules
+client/dist
+client/e2e-shots
+client/test-results
+client/playwright-report
+server/.data
+server/.local-storage
+server/.env
+server/.env.*
+!server/.env.example
+!server/.env.production.example
+.git
+.github
+*.log
+*.sqlite
+step*.png
+coolify-*.png
+supabase/.temp
+.DS_Store

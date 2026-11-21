@@ -7,6 +7,9 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { db, IS_LOCAL } from './config/db.js';
 import { resolveSession, requireAuth, requireRole, loadCase, requireCaseAccess } from './middleware/auth.js';
 import * as auth from './controllers/authController.js';
@@ -20,8 +23,23 @@ import { notify, notifyCoordinators, notifyAdmins } from './services/notificatio
 import { TERMINAL } from './services/stateMachine.js';
 
 const app = express();
-app.set('trust proxy', 1); // Nginx reverse proxy on Ubuntu (Blueprint §6)
-app.use(helmet());
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.set('trust proxy', 1); // Nginx/Traefik reverse proxy (Blueprint §6)
+// DEC-049: CSP tuned so the same-origin React SPA works (inline styles/scripts, self API/PDF).
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      connectSrc: ["'self'"],
+      frameSrc: ["'self'"],
+      fontSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"]
+    }
+  }
+}));
 // DEC-047: CLIENT_ORIGIN may be comma-separated to allow dev + production frontends.
 const clientOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors({ origin: clientOrigins.length === 1 ? clientOrigins[0] : clientOrigins, credentials: true }));
@@ -103,6 +121,17 @@ api.post('/notifications/:id/read', requireAuth, admin.readNotification);
 
 app.use('/api/v1', api);
 app.get('/health', (req, res) => res.json({ ok: true, driver: IS_LOCAL ? 'local' : 'supabase' }));
+
+// DEC-049: same-origin hosting (Option A) — serve the built React client + SPA fallback.
+// Active only when a build exists (production/Docker); in dev, Vite serves the UI on :5173.
+const staticDir = process.env.STATIC_DIR || path.join(__dirname, '..', 'client', 'dist');
+if (fs.existsSync(path.join(staticDir, 'index.html'))) {
+  app.use(express.static(staticDir));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next(); // unknown API paths still 404 as JSON
+    res.sendFile(path.join(staticDir, 'index.html'));
+  });
+}
 
 // Error handler: multer size limit + typed http errors.
 app.use((err, req, res, next) => {
