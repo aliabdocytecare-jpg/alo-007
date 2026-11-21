@@ -1,9 +1,12 @@
-// DEC-039: production first-admin bootstrap (demo seeding is dev-only).
+// DEC-039 / DEC-045: production FIRST-USER bootstrap — creates the single ALO Super Admin.
+// Industry pattern (Django createsuperuser / Strapi admin init): a one-time, operator-run
+// command, never hardcoded users in migrations. This script is FIRST-USER-ONLY: it refuses
+// once any staff exists, so exactly one admin is bootstrapped; everyone else is created
+// afterwards through the authenticated, audited Admin console (US-ADM-001).
 // Usage:
 //   ADMIN_EMAIL=you@clinic.com ADMIN_PASSWORD='<strong>' ADMIN_NAME='Your Name' \
 //     node scripts/create-admin.mjs
 // Works against whichever driver is configured (local SQLite or real Supabase).
-// After bootstrap, create the rest of the staff via Admin console (US-ADM-001).
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { db, IS_LOCAL } from '../config/db.js';
@@ -22,15 +25,23 @@ if (['Admin@12345', 'Coord@12345', 'Doctor@12345', 'Nurse@12345'].includes(passw
   fail('Refusing a known demo password. Choose a unique strong password.');
 }
 
-const { data: existing } = await db.from('staff_users').select().eq('email', email).maybeSingle();
-if (existing) fail(`An account already exists for ${email} (role: ${existing.role}).`);
+// DEC-045: first-user-only. Once any staff exists the bootstrap path is closed.
+const { data: anyStaff } = await db.from('staff_users').select('id').limit(1);
+if (anyStaff && anyStaff.length) {
+  fail('Bootstrap is closed: staff already exist. Sign in as admin and create staff in the Admin console.');
+}
 
-const { error } = await db.from('staff_users').insert({
+const { data: created, error } = await db.from('staff_users').insert({
   email, password_hash: bcrypt.hashSync(password, 10), role: 'admin',
   full_name: fullName, phone: process.env.ADMIN_PHONE || '+966500000000', is_active: true
-});
+}).select().single();
 if (error) fail(error.message);
 
-console.log(`Admin created: ${email} (driver: ${IS_LOCAL ? 'local-embedded' : 'supabase'}).`);
-console.log('Sign in at /login -> Staff sign-in, then create staff in the Admin console.');
+await db.from('audit_log').insert({
+  action: 'ADMIN_BOOTSTRAPPED', actor_role: 'system', resource_type: 'staff',
+  resource_id: created.id, detail: { email, via: 'create-admin.mjs' }
+});
+
+console.log(`ALO Super Admin created: ${email} (driver: ${IS_LOCAL ? 'local-embedded' : 'supabase'}).`);
+console.log('This was a one-time bootstrap. Sign in at /login -> Staff sign-in; create all other staff in the Admin console.');
 process.exit(0);

@@ -30,6 +30,15 @@ export const createStaff = ah(async (req, res) => {
 // US-ADM-001 AC3: deactivate without deleting.
 export const setStaffActive = ah(async (req, res) => {
   const { is_active } = req.body;
+  // DEC-045: lockout protection — never deactivate the last active admin.
+  if (!is_active) {
+    const { data: target } = await db.from('staff_users').select().eq('id', req.params.id).maybeSingle();
+    if (target?.role === 'admin' && target.is_active) {
+      const { data: admins } = await db.from('staff_users').select().eq('role', 'admin');
+      const otherActive = (admins || []).filter(a => a.is_active && a.id !== req.params.id);
+      if (otherActive.length === 0) throw httpError(409, 'Cannot deactivate the last active admin (lockout protection).');
+    }
+  }
   await db.from('staff_users').update({ is_active: !!is_active }).eq('id', req.params.id);
   await audit(req, is_active ? 'STAFF_ACTIVATED' : 'STAFF_DEACTIVATED', { resourceType: 'staff', resourceId: req.params.id });
   res.json({ ok: true });

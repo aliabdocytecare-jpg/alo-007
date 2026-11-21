@@ -97,7 +97,9 @@ in `client/test-results/`.
 
 1. Create a Supabase project; run `supabase/migrations/20261120_001_schema.sql` then
    `20261120_002_seed.sql` (SQL editor or `supabase db push`).
-2. Create the **private** storage bucket `case-documents`.
+   *`002_seed` is reference **configuration** (specialties, services, formulary, SLA, settings)
+   the app needs to operate — it creates **no users, patients, or cases**.*
+2. The **private** storage bucket `case-documents` is created automatically by the migration.
 3. Set `server/.env`:
    ```
    SUPABASE_URL=https://<project>.supabase.co
@@ -108,12 +110,15 @@ in `client/test-results/`.
    JWT_SECRET=<long-random-32+-chars>
    ```
    Boot **fails fast** if the secret is missing/short or mock auth is on (DEC-039).
-4. Bootstrap the first admin (demo accounts are dev-only, never seeded in production):
+4. Bootstrap the **single ALO Super Admin** — a clean start, no demo data (DEC-045).
+   This is a one-time, **first-user-only** command (the `createsuperuser` industry pattern):
+   it refuses once any staff exists, so exactly one admin is seeded.
    ```bash
    ADMIN_EMAIL=you@clinic.com ADMIN_PASSWORD='<strong-unique>' ADMIN_NAME='Your Name' \
      node scripts/create-admin.mjs
    ```
-   Then create the rest of the staff via the Admin console.
+   The bootstrap is audited (`ADMIN_BOOTSTRAPPED`). Create every other staff member afterwards
+   via the Admin console. The **last active admin cannot be deactivated** (lockout protection).
 5. Wire real WhatsApp Cloud API credentials (DEC-009) and restart.
 
 ## Deployment path

@@ -359,6 +359,12 @@ async function main() {
     console.log('  SKIP E15 (requires local driver for time manipulation)');
   }
 
+  // E16 (DEC-045): lockout protection — the last active admin cannot be deactivated.
+  const staffList = await admin.get('/admin/staff');
+  const lastAdminId = (staffList.data || []).find(s => s.role === 'admin' && s.is_active)?.id;
+  const e16 = await admin.patch(`/admin/staff/${lastAdminId}/active`, { is_active: false });
+  check('E16-last-admin', e16.status === 409);
+
   // E9 LAST: rate limit on review endpoint (consumes remaining budget)
   let got429 = false;
   for (let i = 0; i < 40; i++) {
