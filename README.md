@@ -95,8 +95,8 @@ in `client/test-results/`.
 
 ## Switching to real Supabase (production)
 
-1. Create a Supabase project; run `supabase/migrations/20261120_001_schema.sql` then
-   `20261120_002_seed.sql` (SQL editor or `supabase db push`).
+1. Create a Supabase project; run `supabase/migrations/20261120000001_schema.sql` then
+   `20261120000002_seed.sql` (SQL editor or `supabase db push`).
    *`002_seed` is reference **configuration** (specialties, services, formulary, SLA, settings)
    the app needs to operate — it creates **no users, patients, or cases**.*
 2. The **private** storage bucket `case-documents` is created automatically by the migration.

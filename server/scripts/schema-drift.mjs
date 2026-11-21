@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const files = {
-  supabase: path.join(root, 'supabase', 'migrations', '20261120_001_schema.sql'),
+  supabase: path.join(root, 'supabase', 'migrations', '20261120000001_schema.sql'),
   local: path.join(root, 'server', 'config', 'localDriver.js')
 };
 

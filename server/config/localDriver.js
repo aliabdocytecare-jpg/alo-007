@@ -17,7 +17,7 @@ const sqlite = new Database(path.join(DATA_DIR, 'alodoc.sqlite'));
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
 
-// ---- Schema (mirrors supabase/migrations/20261120_001_schema.sql) ----
+// ---- Schema (mirrors supabase/migrations/20261120000001_schema.sql) ----
 sqlite.exec(`
 create table if not exists patients (
   id text primary key, phone text unique not null, full_name text not null,
@@ -343,7 +343,7 @@ const storage = {
   }
 };
 
-// ---- Seed (mirrors 20261120_002_seed.sql) ----
+// ---- Seed (mirrors 20261120000002_seed.sql) ----
 function seed() {
   const specialties = [
     ['General Medicine', 'الطب العام'], ['Internal Medicine', 'الطب الباطني'], ['Cardiology', 'أمراض القلب'],

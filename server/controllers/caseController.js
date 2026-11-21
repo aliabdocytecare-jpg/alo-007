@@ -77,7 +77,9 @@ export const assign = ah(async (req, res) => {
     if (c.status === 'READY_FOR_ASSIGNMENT') {
       await transition(c.id, 'SPECIALIST_ASSIGNED', { actorId: req.session.sub, actorRole: 'coordinator', note: `International specialist: ${specialist_name}` });
     }
-    const reviewUrl = `${process.env.CLIENT_ORIGIN || 'http://localhost:5173'}/review/${token}`;
+    // DEC-047: magic links point at the primary frontend origin (first CLIENT_ORIGIN entry).
+    const appOrigin = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
+    const reviewUrl = `${appOrigin}/review/${token}`;
     // N-06: WhatsApp only, no PHI (BR-017).
     await notify({
       event: 'N-06', caseId: c.id, recipientType: 'specialist', channels: ['whatsapp'],

@@ -12,3 +12,7 @@ client/test-results/
 client/playwright-report/
 client/e2e-shots/
 step*.png
+coolify-*.png
+
+# Supabase CLI temp
+supabase/.temp/
