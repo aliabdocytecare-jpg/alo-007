@@ -1,5 +1,6 @@
 // US-ADM-001..005: staff, formulary, service catalog, SLA targets, immutable audit log.
-import { useState } from 'react';
+// DEC-051: WhatsApp provider config (sending OFF by default).
+import { useState, useEffect } from 'react';
 import { api, errMsg, fmtDate } from '../../lib/api';
 import { useI18n } from '../../lib/i18n';
 import { Msg, Field, useAsync } from '../../components/ui';
@@ -189,10 +190,147 @@ function AuditTab() {
   );
 }
 
+// DEC-051/053: credentials are stored server-side; the token field is write-only.
+// Login OTP and status updates are switched independently.
+function WhatsAppTab() {
+  const { t } = useI18n();
+  const { data, err, reload } = useAsync(() => api.get('/admin/settings/whatsapp').then(r => r.data));
+  const [form, setForm] = useState(null);
+  const [state, setState] = useState({ err: '', ok: '' });
+  const [testTo, setTestTo] = useState('');
+  const [templates, setTemplates] = useState(null);
+
+  useEffect(() => {
+    if (data) setForm({
+      otp_enabled: data.otp_enabled, notify_enabled: data.notify_enabled,
+      waba_id: data.waba_id, phone_number_id: data.phone_number_id,
+      api_version: data.api_version, otp_template: data.otp_template, otp_template_lang: data.otp_template_lang,
+      otp_profile_lang: data.otp_profile_lang, notify_template: data.notify_template,
+      notify_template_lang: data.notify_template_lang, token: ''
+    });
+  }, [data]);
+
+  if (!form) return <p className="muted">{t('loading')}</p>;
+  const set = (k, v) => setForm({ ...form, [k]: v });
+  // Badges follow each toggle; the local mock kill switch is an environment override.
+  const modeKeyFor = on => !on ? 'waMode_disabled'
+    : !data?.configured ? 'waMode_not_configured'
+      : data?.mock_switch ? 'waMode_mock' : 'waMode_live';
+  // DEC-052: surface anything that would bill at MARKETING rates, or could drift there.
+  const marketingTemplates = (templates || []).filter(x => x.category === 'MARKETING');
+  const riskTemplates = (templates || []).filter(x => x.marketing_risk && x.category !== 'MARKETING');
+  const label = x => `${x.name} [${x.language}]`;
+
+  const save = async () => {
+    setState({ err: '', ok: '' });
+    try {
+      const payload = { ...form };
+      if (!payload.token) delete payload.token; // blank keeps the stored token
+      await api.patch('/admin/settings/whatsapp', payload);
+      setForm({ ...form, token: '' });
+      setState({ ok: t('savedAt'), err: '' });
+      reload();
+    } catch (e) { setState({ err: errMsg(e), ok: '' }); }
+  };
+  const sendTest = async () => {
+    setState({ err: '', ok: '' });
+    try {
+      const r = await api.post('/admin/settings/whatsapp/test', { to: testTo });
+      setState({ ok: r.data.mock ? t('waTestMock') : t('waTestOk'), err: '' });
+    } catch (e) { setState({ err: errMsg(e), ok: '' }); }
+  };
+  const loadTemplates = async () => {
+    setState({ err: '', ok: '' });
+    try { setTemplates((await api.get('/admin/settings/whatsapp/templates')).data.items); }
+    catch (e) { setState({ err: errMsg(e), ok: '' }); }
+  };
+  // Explicit null clears the stored secret; the server refuses while sending is ON.
+  const clearToken = async () => {
+    setState({ err: '', ok: '' });
+    try {
+      await api.patch('/admin/settings/whatsapp', { token: null });
+      setState({ ok: t('savedAt'), err: '' });
+      reload();
+    } catch (e) { setState({ err: errMsg(e), ok: '' }); }
+  };
+
+  return (
+    <div>
+      <Msg err={err || state.err} ok={state.ok} />
+      <p className="muted">
+        <strong>{t('waOtpChannel')}:</strong> {t(modeKeyFor(data?.otp_enabled))}
+        {' · '}<strong>{t('waNotifyChannel')}:</strong> {t(modeKeyFor(data?.notify_enabled))}
+        {data?.token_set ? ` · ${t('waTokenSaved')} ${data.token_hint}` : ''}
+      </p>
+      {data?.mock_switch && <p className="muted">{t('waMockHint')}</p>}
+      <p className="muted">{t('waCost')}</p>
+      <label style={{ fontWeight: 400 }}>
+        <input type="checkbox" checked={form.otp_enabled} onChange={e => set('otp_enabled', e.target.checked)} /> {t('waOtpEnable')}
+      </label>
+      <label style={{ fontWeight: 400 }}>
+        <input type="checkbox" checked={form.notify_enabled} onChange={e => set('notify_enabled', e.target.checked)} /> {t('waNotifyEnable')}
+      </label>
+      <p className="muted">{t('waSplitHint')}</p>
+      <div className="grid2">
+        <Field label={t('waWabaId')}><input dir="ltr" value={form.waba_id} onChange={e => set('waba_id', e.target.value)} /></Field>
+        <Field label={t('waPhoneNumberId')}><input dir="ltr" value={form.phone_number_id} onChange={e => set('phone_number_id', e.target.value)} /></Field>
+        <Field label={t('waToken')}>
+          <input dir="ltr" type="password" autoComplete="off" value={form.token}
+            placeholder={data?.token_set ? t('waTokenKeep') : ''} onChange={e => set('token', e.target.value)} />
+        </Field>
+        <Field label={t('waApiVersion')}><input dir="ltr" value={form.api_version} onChange={e => set('api_version', e.target.value)} /></Field>
+        <Field label={t('waOtpTemplate')}><input dir="ltr" value={form.otp_template} onChange={e => set('otp_template', e.target.value)} /></Field>
+        <Field label={t('waOtpLang')}><input dir="ltr" value={form.otp_template_lang} onChange={e => set('otp_template_lang', e.target.value)} /></Field>
+        <Field label={t('waNotifyTemplate')}><input dir="ltr" value={form.notify_template} onChange={e => set('notify_template', e.target.value)} /></Field>
+        <Field label={t('waNotifyLang')}><input dir="ltr" value={form.notify_template_lang} onChange={e => set('notify_template_lang', e.target.value)} /></Field>
+      </div>
+      <label style={{ fontWeight: 400 }}>
+        <input type="checkbox" checked={form.otp_profile_lang} onChange={e => set('otp_profile_lang', e.target.checked)} /> {t('waProfileLang')}
+      </label>
+      <p className="muted">{t('waNotifyHint')}</p>
+      <div className="row">
+        <button onClick={save}>{t('save')}</button>
+        {data?.token_set && <button onClick={clearToken}>{t('waTokenClear')}</button>}
+      </div>
+
+      <h2>{t('waTest')}</h2>
+      <div className="row">
+        <input dir="ltr" placeholder="+9665XXXXXXXX" value={testTo} onChange={e => setTestTo(e.target.value)} />
+        <button onClick={sendTest}>{t('waTest')}</button>
+      </div>
+      <p className="muted">{t('waTestHint')}</p>
+
+      <h2>{t('waTemplates')}</h2>
+      <p className="muted">{t('waCategoryPolicy')}</p>
+      <button onClick={loadTemplates}>{t('waLoadTemplates')}</button>
+      {!!marketingTemplates.length && (
+        <p style={{ color: '#b3261e', fontWeight: 600 }}>{t('waMarketingFound')}: {marketingTemplates.map(label).join(', ')}</p>
+      )}
+      {!!riskTemplates.length && (
+        <p className="muted">{t('waRiskFound')}: {riskTemplates.map(label).join(', ')}</p>
+      )}
+      {!!templates?.length && (
+        <table>
+          <thead><tr><th>{t('name')}</th><th>{t('waLang')}</th><th>{t('category')}</th><th>{t('status')}</th><th>{t('waVars')}</th></tr></thead>
+          <tbody>
+            {templates.map((tpl, i) => (
+              <tr key={`${tpl.name}-${tpl.language}-${i}`}>
+                <td dir="ltr">{tpl.name}</td><td dir="ltr">{tpl.language}</td>
+                <td style={tpl.category === 'MARKETING' ? { color: '#b3261e', fontWeight: 600 } : undefined}>{tpl.category}</td>
+                <td>{tpl.status}</td><td>{tpl.body_vars}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
   const { t } = useI18n();
   const [tab, setTab] = useState('staff');
-  const tabs = [['staff', 'staffMgmt'], ['formulary', 'formularyAdmin'], ['services', 'servicesAdmin'], ['sla', 'sla'], ['audit', 'auditLog']];
+  const tabs = [['staff', 'staffMgmt'], ['formulary', 'formularyAdmin'], ['services', 'servicesAdmin'], ['sla', 'sla'], ['whatsapp', 'whatsapp'], ['audit', 'auditLog']];
   return (
     <div>
       <h1>{t('admin')}</h1>
@@ -203,6 +341,7 @@ export default function Admin() {
       {tab === 'formulary' && <FormularyTab />}
       {tab === 'services' && <ServicesTab />}
       {tab === 'sla' && <SlaTab />}
+      {tab === 'whatsapp' && <WhatsAppTab />}
       {tab === 'audit' && <AuditTab />}
     </div>
   );

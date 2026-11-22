@@ -6,12 +6,13 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
-    "e2e": "node scripts/e2e.mjs"
+    "preflight": "node scripts/preflight.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "wa:templates": "node scripts/whatsapp-templates.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.10.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

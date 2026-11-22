@@ -1,8 +1,41 @@
-// Bible F-NOTIF / Part 7. In-app always real; WhatsApp mocked behind flag (DEC-007/013).
+// Bible F-NOTIF / Part 7. In-app always real; WhatsApp is settings-driven (DEC-051).
 // BR-017: callers must never put PHI (diagnosis, meds, clinical detail) in title/body.
-import { db, MOCK_WHATSAPP } from '../config/db.js';
+import { db } from '../config/db.js';
+import { getWhatsAppConfig, whatsappMode, sendBodyTemplate } from './whatsappService.js';
 
-export async function notify({ event, caseId = null, recipientType, recipientId = null, title, body = '', channels = ['in-app', 'whatsapp'] }) {
+// Recipient phone lives on patients/staff_users; specialists pass it explicitly.
+async function phoneFor(recipientType, recipientId) {
+  if (!recipientId) return null;
+  const table = recipientType === 'patient' ? 'patients' : recipientType === 'staff' ? 'staff_users' : null;
+  if (!table) return null;
+  const { data } = await db.from(table).select().eq('id', recipientId).maybeSingle();
+  return data?.phone || null;
+}
+
+// DEC-051: returns {status, reason, messageId} so the log records what really happened.
+// Mock mode keeps the pre-existing dev behaviour (terminal line, no network call).
+async function whatsappSend({ recipientType, recipientId, recipientPhone, title, body }) {
+  const cfg = await getWhatsAppConfig();
+  const mode = whatsappMode(cfg, 'notify');
+  if (mode === 'mock') {
+    console.log(`[WhatsApp mock -> ${recipientType}:${recipientId || 'specialist'}] ${title} | ${body}`);
+    return { status: 'mock_sent', reason: null };
+  }
+  if (!cfg.notifyEnabled) return { status: 'skipped', reason: 'notify_disabled' };
+  if (!cfg.notifyTemplate) return { status: 'skipped', reason: 'notify_template_not_set' };
+  if (mode === 'not_configured') return { status: 'failed', reason: 'whatsapp_not_configured' };
+  const to = recipientPhone || await phoneFor(recipientType, recipientId);
+  if (!to) return { status: 'skipped', reason: 'no_phone_on_file' };
+  try {
+    const r = await sendBodyTemplate(cfg, to, cfg.notifyTemplate, cfg.notifyLang, [title, body]);
+    return { status: 'sent', reason: null, messageId: r?.messages?.[0]?.id };
+  } catch (err) {
+    console.error('[WhatsApp] send failed:', err.message);
+    return { status: 'failed', reason: String(err.message).slice(0, 200) };
+  }
+}
+
+export async function notify({ event, caseId = null, recipientType, recipientId = null, recipientPhone = null, title, body = '', channels = ['in-app', 'whatsapp'] }) {
   // Part 8.3 dedupe: same event + recipient + case within 60s is discarded.
   const since = new Date(Date.now() - 60_000).toISOString();
   let dupQuery = db.from('notification_log').select()
@@ -19,18 +52,21 @@ export async function notify({ event, caseId = null, recipientType, recipientId 
     });
   }
   for (const channel of channels) {
-    let status = 'sent';
-    if (channel === 'whatsapp') status = MOCK_WHATSAPP ? 'mock_sent' : 'queued';
-    if (channel === 'sms' || channel === 'email') status = 'queued'; // DEC-013: providers not wired yet
+    let status = 'sent', failureReason = null;
+    const detail = { title, body };
+    if (channel === 'whatsapp') {
+      const out = await whatsappSend({ recipientType, recipientId, recipientPhone, title, body });
+      status = out.status;
+      failureReason = out.reason;
+      if (out.messageId) detail.message_id = out.messageId;
+    }
+    if (channel === 'sms' || channel === 'email') { status = 'queued'; failureReason = 'provider_not_configured'; } // DEC-013: providers not wired yet
     await db.from('notification_log').insert({
       event_type: event, recipient_type: recipientType, recipient_id: recipientId, case_id: caseId,
       channel, template_id: event, delivery_status: status,
-      failure_reason: status === 'queued' ? 'provider_not_configured' : null,
-      detail: { title, body }
+      failure_reason: failureReason,
+      detail
     });
-    if (channel === 'whatsapp' && MOCK_WHATSAPP) {
-      console.log(`[WhatsApp mock -> ${recipientType}:${recipientId || 'specialist'}] ${title} | ${body}`);
-    }
   }
 }
 

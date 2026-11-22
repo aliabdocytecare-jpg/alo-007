@@ -17,7 +17,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 # curl is required by Coolify's Docker healthcheck (DEC-050); slim image lacks it.
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-# better-sqlite3 ships prebuilt binaries for linux-x64-glibc (Node 20); no compiler needed.
+# No native modules to compile: better-sqlite3 was removed with the local driver (DEC-054).
 COPY server/package*.json ./
 RUN npm ci --omit=dev
 COPY server/ ./

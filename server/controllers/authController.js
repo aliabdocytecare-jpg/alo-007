@@ -4,6 +4,7 @@ import { db, MOCK_AUTH } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
 import { issueSession, COOKIE, PATIENT_TTL, STAFF_TTL } from '../middleware/auth.js';
 import { notifyAdmins } from '../services/notificationService.js';
+import { getWhatsAppConfig, whatsappMode, sendOtpTemplate, otpLangFor } from '../services/whatsappService.js';
 
 const otpStore = new Map();   // phone -> { code, expiresAt, attempts, lockedUntil, resends[] }
 const staffFails = new Map(); // email -> { count, lockedUntil }
@@ -42,10 +43,37 @@ export const sendOtp = ah(async (req, res) => {
   const hourAgo = Date.now() - 3600_000;
   e.resends = e.resends.filter(t => t > hourAgo);
   if (e.resends.length >= 5) throw httpError(429, 'Too many OTP requests. Try again later.'); // F-AUTH-01: max 5/hour
+
+  const { data: existing } = await db.from('patients').select().eq('phone', phone).maybeSingle();
+  // DEC-051/053: real OTP delivery is WhatsApp-only and gated by its own Admin toggle,
+  // independent of the status-update channel.
+  const cfg = MOCK_AUTH ? null : await getWhatsAppConfig();
+  const mode = cfg ? whatsappMode(cfg, 'otp') : 'mock';
+  if (mode === 'disabled' || mode === 'not_configured') {
+    throw httpError(503, 'Verification codes are unavailable right now. Please contact AloDoc support.');
+  }
+
   e.resends.push(Date.now());
   e.code = MOCK_AUTH ? '123456' : String(Math.floor(100000 + Math.random() * 900000));
   e.expiresAt = Date.now() + 10 * 60_000; // 10 minute validity
-  const { data: existing } = await db.from('patients').select().eq('phone', phone).maybeSingle();
+
+  if (mode === 'mock') {
+    console.log(`[WhatsApp mock -> ${phone}] OTP ${e.code}${cfg ? ` (${cfg.otpTemplate}/${otpLangFor(cfg, existing?.preferred_lang)})` : ''}`);
+  } else {
+    // DEC-005: prefer the patient's language; a missing variant must not lock them
+    // out, so fall back to the admin-configured default before failing.
+    const langs = [...new Set([otpLangFor(cfg, existing?.preferred_lang), cfg.otpLang])];
+    let lastErr = null;
+    for (const lang of langs) {
+      try { await sendOtpTemplate(cfg, phone, e.code, lang); lastErr = null; break; }
+      catch (err) { lastErr = err; console.error(`[WhatsApp OTP] ${lang} send failed:`, err.message); }
+    }
+    if (lastErr) {
+      e.code = null;
+      throw httpError(502, 'Unable to send the verification code. Please try again.');
+    }
+  }
+
   await audit(req, 'OTP_SENT', { detail: { phone }, actorId: null, actorRole: 'anonymous' });
   res.json({ ok: true, exists: !!existing, mock: MOCK_AUTH });
 });

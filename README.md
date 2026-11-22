@@ -1,11 +1,12 @@
 # AloDoc — Healthcare Coordination Platform
 
 Bible-driven build: patient entry first, simple black-and-white text UI (EN/AR RTL),
-Express API + Supabase backend, mock OTP/WhatsApp for local development.
+Express API + Supabase backend. One Supabase database for every environment — no local
+database anywhere (DEC-054), with real WhatsApp OTP gated from Admin → WhatsApp.
 
 - **Product Bible coverage:** personas, F-AUTH/F-CASE/F-MEET/F-RX/F-NOTIF, BR-001..030,
   12-status case state machine, permission matrix, notification matrix N-01..N-14.
-- **Decision log:** every implementation decision is recorded in [`decisions.md`](decisions.md) (DEC-001..042).
+- **Decision log:** every implementation decision is recorded in [`decisions.md`](decisions.md) (DEC-001..055).
 - **Build plan:** [`PLAN.md`](PLAN.md) — 10 phases, all complete.
 - **Team testing guide:** [`TESTING.md`](TESTING.md) — friendly step-by-step flow tests aligned to the user stories, for manual QA and gap reporting.
 
@@ -15,59 +16,60 @@ Express API + Supabase backend, mock OTP/WhatsApp for local development.
 |------|------|-------|
 | Client | React 18 + Vite, custom B/W CSS, custom i18n (EN/AR, `dir=rtl`) | port 5173 |
 | API | Express 4, helmet, CORS, cookie-session JWT, rate limiters | port 3000 |
-| Data | Supabase (Postgres + Storage) in production; embedded SQLite driver locally | DEC-001 |
-| External | Meta WhatsApp Cloud API + Google Meet links (mocked locally) | DEC-009 |
+| Data | **Supabase (Postgres + Storage) — single source of truth for every environment** | DEC-054 |
+| External | Meta WhatsApp Cloud API (real, admin-gated) + Google Meet links (manual) | DEC-009/051 |
 
 The API is the **only** data gate (service-role key server-side; RLS deny-all for direct
-client access). When `SUPABASE_URL` is unset, `server/config/localDriver.js` provides a
-Supabase-compatible client over `better-sqlite3` + local file storage — same query subset,
-zero Docker required (DEC-001/002).
+client access). There is **no local database**: `server/config/db.js` requires
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` and refuses to boot without them. Your laptop
+and https://alodoc.online run the same Express code against the same Supabase project —
+one version of truth, no silos (DEC-054 supersedes the DEC-001 dual driver).
 
-## Quick start (local, no Supabase needed)
+## Quick start (one database — Supabase)
 
 ```bash
-# 1. API (auto-creates schema + seeds staff & 20 test patients on first boot)
+# 0. server/.env — required, no local fallback (DEC-054)
+#    SUPABASE_URL=https://<project-ref>.supabase.co
+#    SUPABASE_SERVICE_ROLE_KEY=<service_role key>
+#    ENABLE_MOCK_AUTH=false
+#    ENABLE_MOCK_WHATSAPP=false
+
+# 1. API
 cd server && npm install && npm run dev        # http://localhost:3000
 
 # 2. Client
 cd client && npm install && npm run dev        # http://localhost:5173
 ```
 
-### Seeded accounts (local/dev only — DEC-012)
+### Accounts (real — no demo seeding any more)
+
+Demo staff and the 20 pre-seeded test patients were **removed** with the local driver
+(DEC-054): known-password accounts must never exist in the single production database.
 
 | Role | Login | Password |
 |------|-------|----------|
-| Admin | admin@alodoc.com | Admin@12345 |
-| Coordinator | coordinator@alodoc.com | Coord@12345 |
-| Doctor (General Medicine) | doctor@alodoc.com | Doctor@12345 |
-| Nurse | nurse@alodoc.com | Nurse@12345 |
+| Admin (ALO Super Admin) | aliabdocytecare@gmail.com | owner-held |
 
-Patients: any phone → **mock OTP `123456`** (PIN `1234` where asked). Mock WhatsApp
-messages are printed to the server log, including specialist magic links.
+- **First admin on a clean database:** `ADMIN_EMAIL=… ADMIN_PASSWORD='…' ADMIN_NAME='…' node scripts/create-admin.mjs` (first-user-only, DEC-045).
+- **Everyone else:** an admin creates them in **Admin → Staff** (audited).
+- **Patients:** real phone → **real WhatsApp OTP** (6 digits, 10 min, 5 sends/hour). No mock code.
+  Enable it in **Admin → WhatsApp → Login OTP**; both WhatsApp channels are OFF by default.
+- Name test patients `TEST — …` so they are easy to identify and clean up in the live database.
 
-**20 ready-made test patients (DEC-044):** `+966500001001` … `+966500001020` are pre-seeded
-(local only) — sign in with OTP `123456` → *Verify & Sign In*, no registration. Use any other
-number to test the registration flow. All entered data persists in `server/.data/alodoc.sqlite`.
+## Tests — automated suites retired (DEC-054)
 
-## Tests
+Both suites needed mock OTP `123456`, demo staff and a disposable local database, and they
+**create patients/cases** — which would now land in the live database. They refuse to run:
 
 ```bash
-# UI suite — Playwright, desktop + mobile (Pixel 5). RUN UI FIRST (see note below).
-cd client && npx playwright install chromium   # first time only
-npm run test:ui            # HEADED — watch the sessions live
-npm run test:ui:debug      # Playwright inspector (step through)
-npm run test:ui:headless   # CI mode
-npm run test:ui:report     # open HTML report
-
-# API acceptance suite — Bible Tests A–E + security negatives (71 checks). RUN LAST.
-cd server && npm run e2e                       # expects API running on :3000
+cd client && npm run test:ui     # → "UI suite retired (DEC-054)…"
+cd server && npm run e2e         # → "Retired (DEC-054)…"
 ```
 
-> **Ordering (DEC-034):** API Test E9 intentionally bursts invalid magic-link tokens until
-> the rate limiter returns 429 — saturating the window for that IP. Run Playwright before
-> the API suite, or restart the API between them.
+Specs are kept for reference and can be re-pointed at a disposable database with
+`E2E_ALLOW=true` — never against production. **Test by hand via `TESTING.md`.**
 
-UI sessions (`client/e2e/`) — 12 tests × desktop + mobile = 24 runs:
+Historical UI sessions (`client/e2e/`) — 12 tests × desktop + mobile = 24 runs:
 1. **patient-entry** — same entry flow for 3 personas (EN female, AR male RTL, EN male).
 2. **gmo-review** — GMO submission with real PDF uploads → anonymous specialist
    magic-link review (draft persistence, submit, auto-revoke) → coordinator release →
@@ -87,8 +89,8 @@ UI sessions (`client/e2e/`) — 12 tests × desktop + mobile = 24 runs:
 9. **admin-config** — services on/off + coming-soon with patient-side proof (BR-026),
    SLA target persistence, staff-portals Arabic RTL.
 
-Schema safety: `cd server && node scripts/schema-drift.mjs` verifies the local driver
-mirrors the Supabase migration (DEC-037) — run it before switching to production.
+Schema safety: the SQL files in `supabase/migrations/` are the only schema definition now.
+The DEC-037 drift checker was removed along with the local driver it compared against.
 
 Per-step screenshots land in `client/e2e-shots/`; traces/videos are retained on failure
 in `client/test-results/`.
@@ -119,7 +121,20 @@ in `client/test-results/`.
    ```
    The bootstrap is audited (`ADMIN_BOOTSTRAPPED`). Create every other staff member afterwards
    via the Admin console. The **last active admin cannot be deactivated** (lockout protection).
-5. Wire real WhatsApp Cloud API credentials (DEC-009) and restart.
+5. Configure WhatsApp in **Admin → WhatsApp** (DEC-051) — no restart needed:
+   - Enter the WABA ID, Phone Number ID and a System User access token (write-only; the
+     UI only ever shows a `…last4` hint).
+   - OTP uses the approved `otp_verification` AUTHENTICATION template (`en_US` + `ar`) and
+     follows each patient's preferred language, falling back to the default if a variant
+     is missing.
+   - Leave **Status-update template** blank until an AloDoc-specific UTILITY template with
+     two body variables is approved. The ALO DOCTOR pilot templates on the same WABA point
+     at `howtostart.in/alo/pilot/...` and must not be reused.
+   - Tick **Enable WhatsApp sending**, Save, then **Send test OTP** to verify.
+   Sending is **OFF by default**: with `ENABLE_MOCK_WHATSAPP=false` and the toggle off,
+   patient OTP requests return 503 until an admin enables it (staff login is unaffected).
+   Optionally apply `supabase/migrations/20261122000001_whatsapp_settings.sql` to seed the
+   defaults; the admin save path also creates the keys on demand.
 
 ## Deployment path (LIVE — DEC-049/050)
 
@@ -140,20 +155,24 @@ Cloudflare (alodoc.online, proxied A record → VPS, CDN + TLS)
   `JWT_SECRET` (random 32B), `ENABLE_MOCK_AUTH=false`, `ENABLE_MOCK_WHATSAPP=false`,
   `CLIENT_ORIGIN=https://alodoc.online`. See `server/.env.production.example`.
 - **Redeploy:** `git push` to `main` → webhook → Coolify rebuilds + rolls out (zero downtime).
-- Patient self-registration needs a real SMS OTP provider (mock is off in production).
+- **Preflight (DEC-055):** `cd server && npm run preflight` — read-only check of env, JWT length,
+  mock gates, database reachability, WhatsApp settings and the private storage bucket. Exit code
+  1 = do not deploy. Env must be in Coolify **before** the push: `config/db.js` exits and
+  `middleware/auth.js` throws at import, so a missing variable is a crash loop, not a warning.
+- Patient self-registration uses a **real WhatsApp OTP** (Meta Cloud API), enabled per channel in Admin → WhatsApp. There is no SMS provider.
 
 ## Repository layout
 
 ```
-supabase/migrations/   SQL schema + seed (production source of truth)
-server/                Express API: controllers, services, middleware, drivers
-  scripts/e2e.mjs      Bible Tests A–E (72 checks)
-  .data/               local SQLite (dev only, gitignored)
-  .local-storage/      local file storage (dev only, gitignored)
+supabase/migrations/   SQL schema + seed — the single source of truth
+server/                Express API: controllers, services, middleware
+  config/db.js         Supabase client (required; no local fallback)
+  scripts/e2e.mjs      Bible Tests A–E (retired, DEC-054)
+  scripts/preflight.mjs  Env + database gate for deploys (DEC-055)
 client/                React client: pages (patient/staff/admin/review), lib, components
-  e2e/                 Playwright sessions + helpers
-  e2e-shots/           per-step screenshots
-decisions.md           DEC-001..050 — every decision, with rationale
+  e2e/                 Playwright sessions + helpers (retired, DEC-054)
+  e2e-shots/           historical per-step screenshots
+decisions.md           DEC-001..055 — every decision, with rationale
 TESTING.md             team flow-testing guide (user-story aligned)
 PLAN.md                10-phase build plan + verification results
 ```

@@ -6,11 +6,10 @@ import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
-import bcrypt from 'bcryptjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { db, IS_LOCAL } from './config/db.js';
+import { db } from './config/db.js';
 import { resolveSession, requireAuth, requireRole, loadCase, requireCaseAccess } from './middleware/auth.js';
 import * as auth from './controllers/authController.js';
 import * as cases from './controllers/caseController.js';
@@ -20,6 +19,7 @@ import * as review from './controllers/reviewController.js';
 import * as admin from './controllers/adminController.js';
 import { transition } from './services/caseService.js';
 import { notify, notifyCoordinators, notifyAdmins } from './services/notificationService.js';
+import { getWhatsAppConfig, whatsappMode, checkTemplateDrift } from './services/whatsappService.js';
 import { TERMINAL } from './services/stateMachine.js';
 
 const app = express();
@@ -113,6 +113,11 @@ api.get('/admin/services', requireRole('admin'), admin.listServices);
 api.patch('/admin/services/:id', requireRole('admin'), admin.updateService);
 api.get('/admin/sla', requireRole('admin'), admin.listSla);
 api.patch('/admin/sla/:status', requireRole('admin'), admin.updateSla);
+// DEC-051: WhatsApp provider config — admin-only, sending OFF by default.
+api.get('/admin/settings/whatsapp', requireRole('admin'), admin.getWhatsAppSettings);
+api.patch('/admin/settings/whatsapp', requireRole('admin'), admin.updateWhatsAppSettings);
+api.get('/admin/settings/whatsapp/templates', requireRole('admin'), admin.listWhatsAppTemplates);
+api.post('/admin/settings/whatsapp/test', requireRole('admin'), admin.testWhatsApp);
 api.get('/admin/audit-logs', requireRole('admin'), admin.listAudit);
 
 // ---- Notifications (all roles) ----
@@ -120,7 +125,7 @@ api.get('/notifications', requireAuth, admin.listNotifications);
 api.post('/notifications/:id/read', requireAuth, admin.readNotification);
 
 app.use('/api/v1', api);
-app.get('/health', (req, res) => res.json({ ok: true, driver: IS_LOCAL ? 'local' : 'supabase' }));
+app.get('/health', (req, res) => res.json({ ok: true, driver: 'supabase' }));
 
 // DEC-049: same-origin hosting (Option A) — serve the built React client + SPA fallback.
 // Active only when a build exists (production/Docker); in dev, Vite serves the UI on :5173.
@@ -143,54 +148,13 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: err.message || 'Internal server error' });
 });
 
-// ---- Idempotent staff seed (DEC-017) ----
-async function seedStaff() {
-  const seed = [
-    { email: 'admin@alodoc.com', password: 'Admin@12345', role: 'admin', full_name: 'David Nunez' },
-    { email: 'coordinator@alodoc.com', password: 'Coord@12345', role: 'coordinator', full_name: 'Marcus Vance' },
-    { email: 'doctor@alodoc.com', password: 'Doctor@12345', role: 'doctor', full_name: 'Emmanuel Arcon', specialty: 'General Medicine' },
-    { email: 'nurse@alodoc.com', password: 'Nurse@12345', role: 'nurse', full_name: 'Nour Al-Khalidi' }
-  ];
-  for (const s of seed) {
-    const { data } = await db.from('staff_users').select().eq('email', s.email).maybeSingle();
-    if (!data) {
-      const { password, ...rest } = s;
-      await db.from('staff_users').insert({ ...rest, password_hash: bcrypt.hashSync(password, 10), phone: '+966500000000' });
-      console.log(`Seeded staff: ${s.email}`);
-    }
-  }
-}
-
-// DEC-044: 20 ready-to-use test patients (+966500001001..+966500001020), dev/mock only.
-// Lets the team sign in immediately (OTP 123456 -> Verify & Sign In) without registering each time.
-async function seedTestPatients() {
-  const names = [
-    ['Hessa Al-Rashidi', 'FEMALE', 'ar'], ['Mohammed Al-Qahtani', 'MALE', 'en'],
-    ['Sara Al-Otaibi', 'FEMALE', 'en'], ['Abdullah Al-Ghamdi', 'MALE', 'ar'],
-    ['Noura Al-Harbi', 'FEMALE', 'en'], ['Khalid Al-Zahrani', 'MALE', 'en'],
-    ['Fatima Al-Shehri', 'FEMALE', 'ar'], ['Omar Al-Dossari', 'MALE', 'en'],
-    ['Layla Al-Mutairi', 'FEMALE', 'en'], ['Yusuf Al-Anazi', 'MALE', 'ar'],
-    ['Aisha Al-Subaie', 'FEMALE', 'en'], ['Hassan Al-Shammari', 'MALE', 'en'],
-    ['Mariam Al-Qahtani', 'FEMALE', 'ar'], ['Tariq Al-Harthy', 'MALE', 'en'],
-    ['Reem Al-Balawi', 'FEMALE', 'en'], ['Faisal Al-Malki', 'MALE', 'ar'],
-    ['Dana Al-Saud', 'FEMALE', 'en'], ['Sami Al-Juhani', 'MALE', 'en'],
-    ['Lina Al-Fahad', 'FEMALE', 'ar'], ['Bandar Al-Rashid', 'MALE', 'en']
-  ];
-  let added = 0;
-  for (let i = 0; i < names.length; i++) {
-    const [full_name, gender, lang] = names[i];
-    const phone = `+9665000010${String(i + 1).padStart(2, '0')}`;
-    const { data } = await db.from('patients').select().eq('phone', phone).maybeSingle();
-    if (!data) {
-      const dob = `${1980 + (i % 15)}-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`;
-      await db.from('patients').insert({ phone, full_name, gender, dob, nationality: 'Saudi', preferred_lang: lang });
-      added++;
-    }
-  }
-  if (added) console.log(`Seeded ${added} test patients (+966500001001..+966500001020)`);
-}
+// DEC-054: demo staff/test-patient seeding REMOVED. Supabase is the single source of
+// truth, so known-password demo accounts (DEC-017/DEC-039/DEC-044) must never be written
+// to it. First admin: scripts/create-admin.mjs (first-user-only). Everyone else: the
+// authenticated, audited Admin console (US-ADM-001).
 
 // ---- Background jobs: N-12 SLA breach, N-10 T-24h reminder, auto IN_PROGRESS ----
+let lastWaCategoryCheck = 0; // DEC-052: template category drift check (every 6h)
 async function tick() {
   try {
     const nowIso = new Date().toISOString();
@@ -216,16 +180,31 @@ async function tick() {
         await transition(con.case_id, 'IN_PROGRESS', { actorRole: 'system', note: 'Appointment start time reached' });
       }
     }
+
+    // DEC-052: Meta can re-categorise an approved template to MARKETING with no
+    // advance notice. Re-check the configured templates and alert admins in-app.
+    if (Date.now() - lastWaCategoryCheck >= 6 * 3600_000) {
+      lastWaCategoryCheck = Date.now();
+      const waCfg = await getWhatsAppConfig();
+      if (whatsappMode(waCfg, 'otp') === 'live' || whatsappMode(waCfg, 'notify') === 'live') {
+        const drift = await checkTemplateDrift(waCfg);
+        if (drift.length) {
+          await notifyAdmins({
+            event: 'WA_CATEGORY_DRIFT', title: 'WhatsApp template category changed',
+            body: `Cost policy allows AUTHENTICATION/UTILITY only. ${drift.map(d => `${d.name} [${d.lang}]: ${d.issue} (expected ${d.expected})`).join('; ')}. Review Admin > WhatsApp.`,
+            channels: ['in-app']
+          });
+        }
+      }
+    }
   } catch (e) { console.error('job tick error:', e.message); }
 }
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
-  console.log(`AloDoc API on http://localhost:${PORT} (driver: ${IS_LOCAL ? 'local-embedded' : 'supabase'})`);
-  // DEC-039: known-password demo accounts are dev-only. Production bootstraps via
-  // scripts/create-admin.mjs, then the admin creates staff through the console.
-  if (IS_LOCAL || process.env.ENABLE_MOCK_AUTH === 'true') { await seedStaff(); await seedTestPatients(); }
-  else console.log('Production mode: demo staff seeding skipped. Bootstrap: node scripts/create-admin.mjs');
+  console.log(`AloDoc API on http://localhost:${PORT} (database: Supabase — single source of truth, DEC-054)`);
+  const { count } = await db.from('staff_users').select('*', { count: 'exact', head: true });
+  if (!count) console.log('No staff yet. Bootstrap the first admin: node scripts/create-admin.mjs');
   setInterval(tick, 60_000);
   tick();
 });

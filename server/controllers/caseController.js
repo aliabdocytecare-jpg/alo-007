@@ -82,7 +82,7 @@ export const assign = ah(async (req, res) => {
     const reviewUrl = `${appOrigin}/review/${token}`;
     // N-06: WhatsApp only, no PHI (BR-017).
     await notify({
-      event: 'N-06', caseId: c.id, recipientType: 'specialist', channels: ['whatsapp'],
+      event: 'N-06', caseId: c.id, recipientType: 'specialist', recipientPhone: specialist_phone, channels: ['whatsapp'],
       title: 'Medical Case Review',
       body: `Dear Dr. ${specialist_name}, you have been assigned case ${c.case_number} for specialist review. Open secure case: ${reviewUrl} — link expires in 72 hours.`
     });
@@ -141,6 +141,10 @@ export const escalate = ah(async (req, res) => {
   res.json({ ok: true });
 });
 
+// DEC-051: system_settings also holds admin secrets (WhatsApp token) — only these
+// keys may ever reach a patient/staff browser.
+const PUBLIC_SETTING_KEYS = ['meet_visibility_hours', 'payment_instructions_en', 'payment_instructions_ar'];
+
 // Patient catalog: BR-026 (off services hidden; coming-soon visible but not bookable).
 export const catalog = ah(async (req, res) => {
   const [specialties, services, doctors, settings] = await Promise.all([
@@ -154,7 +158,7 @@ export const catalog = ah(async (req, res) => {
     specialties: specialties.data || [],
     services: (services.data || []).filter(s => s.is_active || s.coming_soon),
     doctors: (doctors.data || []).map(d => ({ id: d.id, full_name: d.full_name, specialty: d.specialty })),
-    settings: settingsMap
+    settings: Object.fromEntries(Object.entries(settingsMap).filter(([k]) => PUBLIC_SETTING_KEYS.includes(k)))
   });
 });
 

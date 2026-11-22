@@ -6,10 +6,10 @@
 // Usage:
 //   ADMIN_EMAIL=you@clinic.com ADMIN_PASSWORD='<strong>' ADMIN_NAME='Your Name' \
 //     node scripts/create-admin.mjs
-// Works against whichever driver is configured (local SQLite or real Supabase).
+// Writes to the single Supabase database (DEC-054) — the same one production uses.
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
-import { db, IS_LOCAL } from '../config/db.js';
+import { db } from '../config/db.js';
 
 const email = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
 const password = process.env.ADMIN_PASSWORD || '';
@@ -44,6 +44,6 @@ await db.from('audit_log').insert({
   resource_id: created.id, detail: { email, via: 'create-admin.mjs' }
 });
 
-console.log(`ALO Super Admin created: ${email} (driver: ${IS_LOCAL ? 'local-embedded' : 'supabase'}).`);
+console.log(`ALO Super Admin created: ${email} (Supabase — single source of truth).`);
 console.log('This was a one-time bootstrap. Sign in at /login -> Staff sign-in; create all other staff in the Admin console.');
 process.exit(0);

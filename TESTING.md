@@ -9,30 +9,43 @@ code. Pick a flow, follow the steps, tick the "Expect" boxes, and tell us where 
 3. Do the **Steps**, check the **Expect** list, then try the **Gap-watch** probes.
 4. Found something odd? Report it with the tiny template at the bottom. No bug is too small.
 
-> ✅ = automated proof already exists for this flow (see "Run the robot tests").
-> You're still welcome to test it by hand — humans catch things robots miss.
+> 🔄 **DEC-054 — one database, no silos.** The local SQLite stand-in and the demo/mock
+> accounts are **gone**. Every environment now talks to the **same live Supabase project**,
+> so data you create while testing is **real production data**. Patient login uses a **real
+> WhatsApp OTP**; staff sign in with real accounts. The automated suites are retired (they
+> needed mock mode) — test by hand using these cards.
 
 ---
 
-## 1. Get it running (no database setup needed)
+## 1. Get it running (one database — Supabase)
 
-You need **Node.js 20+** installed. That's it — no Docker, no Supabase account for local testing.
+You need **Node.js 20+** and the project's Supabase credentials. There is **no local database**
+any more (DEC-054): your laptop runs the same Express code against the same live Supabase
+project as https://alodoc.online.
 
 ```bash
 git clone https://github.com/kathirvelmurugan/2026NOV20-ALO-DOC.git
 cd 2026NOV20-ALO-DOC
 
-# Terminal 1 — the API (creates a local database + demo staff automatically)
+# server/.env — ask the owner for these values (never commit them):
+#   SUPABASE_URL=https://<project-ref>.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY=<service_role key>
+#   ENABLE_MOCK_AUTH=false
+#   ENABLE_MOCK_WHATSAPP=false
+
+# Terminal 1 — the API
 cd server && npm install && npm run dev
-# → "AloDoc API on http://localhost:3000 (driver: local-embedded)"
+# → "AloDoc API on http://localhost:3000 (database: Supabase — single source of truth, DEC-054)"
 
 # Terminal 2 — the website
 cd client && npm install && npm run dev
 # → open http://localhost:5173
 ```
 
-Open **http://localhost:5173** in your browser. Keep Terminal 1 visible — that's where
-magic links and WhatsApp messages appear (see Golden Rule #3).
+The API **refuses to boot** without `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`.
+
+Open **http://localhost:5173** — or just test **https://alodoc.online**. It is the same
+database, so anything you do in one shows up in the other.
 
 **Tip:** use two browser windows (or one normal + one incognito) so you can be a patient in
 one and a staff member in the other at the same time.
@@ -41,41 +54,38 @@ one and a staff member in the other at the same time.
 
 ## 2. Golden rules (read these once)
 
-1. **Patient login is mocked.** Any phone number works. The OTP is always **`123456`**.
-   A banner on screen reminds you. (Real SMS comes later.)
-2. **Demo staff accounts** (local only — these never exist in production):
+1. **Patient login is a real WhatsApp OTP.** Use a phone you actually control, in international
+   format (e.g. `+919159007007`). The 6-digit code arrives on WhatsApp from **Everyday Ai Labs**,
+   is valid **10 minutes**, and allows **5 sends/hour**. There is no `123456` any more, and no SMS.
+   Each delivered code is a **billed** message — don't spam Send OTP. If **Admin → WhatsApp →
+   Login OTP** is OFF you'll get *"Verification codes are unavailable right now"* (503).
+2. **Real staff accounts** — demo accounts no longer exist (DEC-054 removed all seeding):
 
    | Role | Email | Password |
    |------|-------|----------|
-   | Admin | `admin@alodoc.com` | `Admin@12345` |
-   | Coordinator | `coordinator@alodoc.com` | `Coord@12345` |
-   | Doctor (General Medicine) | `doctor@alodoc.com` | `Doctor@12345` |
-   | Nurse | `nurse@alodoc.com` | `Nurse@12345` |
+   | Admin (ALO Super Admin) | `aliabdocytecare@gmail.com` | owner-held, never documented |
+   | Admin | `kathirvel.murugan@gmail.com` | owner-held, never documented |
 
    Staff sign-in: on the login page click **"Staff sign-in"**, then email + password.
+   Passwords are never written into this repo — ask the owner, or have an admin create your
+   account in **Admin → Staff** (10+ chars, 1 uppercase, 1 number, 1 special character).
 
-   **Ready-made test patients (no registration needed):** 20 patients are pre-created in local
-   mode, numbers **`+966500001001` through `+966500001020`**. Sign in with any of them + OTP
-   `123456` → you'll see *"Welcome back"* → **Verify & Sign In** (straight in, no form).
-   Handy for assigning different testers different patients, e.g.:
+   **Coordinator / doctor / nurse accounts must be created by an admin** before you can test
+   those flows; they are no longer generated automatically.
 
-   | Phone | Name | Lang |
-   |-------|------|------|
-   | `+966500001001` | Hessa Al-Rashidi | ar |
-   | `+966500001002` | Mohammed Al-Qahtani | en |
-   | `+966500001003` | Sara Al-Otaibi | en |
-   | … | … (20 total, alternating EN/AR) | … |
-   | `+966500001020` | Bandar Al-Rashid | en |
-
-   These exist only in local/dev mode (never in production). To test the *registration* flow
-   itself (Flow 1), use any **other** number not in this series.
-3. **Magic links & WhatsApp live in the server terminal.** When a coordinator assigns an
-   international specialist, Terminal 1 prints a line like:
-   `[WhatsApp mock -> specialist...] ... Open secure case: http://localhost:5173/review/XXXX`
-   Copy that `/review/...` URL into a browser — that's the specialist's anonymous page.
+   **Test patients:** register with a real number you control, and prefix the name with
+   `TEST — ` so test records are easy to spot and clean up in the live database.
+3. **Magic links are handed to the coordinator, not printed.** Assigning an international
+   specialist returns `review_url` (`/review/<48-char token>`, 72 h TTL) in the response and the
+   coordinator UI. Delivering that link by WhatsApp (N-06) uses the **status updates** channel,
+   which is **OFF by default** — so until an admin enables it, copy the link manually and open
+   it in a browser. That's the specialist's anonymous page.
 4. **Every case gets a number** like `ALO-2026-00012`. Write it down — you'll search for it.
-5. **Your data is local and disposable.** It lives in `server/.data/`. To start completely
-   fresh, stop the server, delete that folder, and restart. Nothing you do here affects production.
+5. **Your data is REAL and shared.** It lives in the live Supabase project alongside actual
+   patient records — there is no "delete the folder and start fresh" any more. Name test
+   patients `TEST — …`, note the case numbers you create, and ask an admin to clean up
+   afterwards. Keep the WhatsApp **status updates** channel OFF while testing unless you
+   genuinely intend to message real people.
 6. **Statuses are plain-English for patients** ("Our team is reviewing your case") but
    technical for staff (`INITIAL_REVIEW`). Both are correct — don't report that as a bug.
 
@@ -89,18 +99,18 @@ one and a staff member in the other at the same time.
 > ⚠️ **#1 thing testers get stuck on:** patients and staff log in differently.
 > Staff accounts already exist, so they sign straight in. **A patient with a NEW number must
 > REGISTER first** — after Send OTP the form shows *"New here? Create your patient account"*.
-> Enter `123456`, fill **Full name (required)**, then press **Register** (not "Verify").
+> Enter the code from WhatsApp, fill **Full name (required)**, then press **Register** (not "Verify").
 > If you only type phone + OTP and look for a login button, you'll see *"Full name is required."*
 
 **Steps**
-1. Go to http://localhost:5173 → you land on the login page.
-2. Type a phone, e.g. `+966512345678` → click **Send OTP**.
-3. See the "Mock mode active — OTP: 123456" banner → type `123456`.
-4. Because this number is new, a registration form appears. Fill **Full name**, **Date of
-   birth**, **Gender** → click **Register**.
+1. Go to http://localhost:5173 (or https://alodoc.online) → you land on the login page.
+2. Type a real phone you control, e.g. `+919159007007` → click **Send OTP**.
+3. Read the 6-digit code from the **WhatsApp** message → type it in.
+4. Because this number is new, a registration form appears. Fill **Full name** (prefix
+   `TEST — `), **Date of birth**, **Gender** → click **Register**.
 5. You should land on the patient home with three service cards.
-6. Click **Logout** (top right). Sign in again with the same phone + `123456` → you go
-   straight in (no registration form this time).
+6. Click **Logout** (top right). Sign in again with the same phone → **Send OTP** → enter the
+   new code → you go straight in (no registration form this time).
 
 **Expect**
 - [ ] New number → registration form; returning number → straight to home.
@@ -301,7 +311,8 @@ Sign in as `admin@alodoc.com` → top nav **Admin**.
 
 **Expect**
 - [ ] Unread badge decreases after marking read.
-- [ ] WhatsApp-style messages appear in **Terminal 1** (mocked) — including the specialist link.
+- [ ] In-app notifications appear. WhatsApp delivery is **skipped** while the status-updates
+      channel is OFF (`notification_log.delivery_status = skipped`, reason `notify_disabled`).
 
 > ℹ️ Email/SMS show as "queued" in the log — real providers aren't wired yet (see Limitations).
 
@@ -329,29 +340,24 @@ Sign in as `admin@alodoc.com` → top nav **Admin**.
 
 ---
 
-## 4. Run the robot tests (optional but powerful)
+## 4. The robot tests are retired (DEC-054)
 
-These replay everything above automatically and take screenshots.
+Both automated suites depended on the world we just removed: mock OTP `123456`, demo staff
+accounts, and a disposable local database. They also **create patients and cases**, which would
+now land in the **live** database. So they refuse to run by default:
 
 ```bash
-cd client
-npx playwright install chromium     # first time only
-
-npm run test:ui            # WATCH it happen in real browser windows (headed)
-npm run test:ui:headless   # fast, no windows (CI style)
-npm run test:ui:report     # open the HTML report afterwards
+cd client && npm run test:ui     # → "UI suite retired (DEC-054)…"
+cd server && npm run e2e         # → "Retired (DEC-054)…"
 ```
 
-- **9 sessions / 24 runs** (desktop + mobile). Screenshots land in `client/e2e-shots/`.
-- API acceptance suite (Bible Tests A–E, 71 checks):
-  ```bash
-  cd server && npm run e2e
-  ```
+The specs are kept for reference (`client/e2e/`, `server/scripts/e2e.mjs`), and the historical
+screenshots in `client/e2e-shots/` still show what each flow looked like. The ✅ marks on the
+flow cards mean "this flow used to have automated proof".
 
-> ⚠️ **Order matters:** run the **UI tests first**, the **API suite last**. The API suite's
-> rate-limit test intentionally trips the limiter for your IP for ~10 minutes. If the UI
-> suddenly says "too many attempts", restart the server and run UI first. (This is the
-> security feature working, not a bug.)
+**Test by hand instead** — that's what these cards are for. If you ever need the robots back,
+they must be re-pointed at a disposable database with real seeded staff and run with
+`E2E_ALLOW=true`. Never do that against the production project.
 
 ---
 
@@ -361,14 +367,15 @@ These are deliberate, documented decisions (see `decisions.md`):
 
 | Thing | Status |
 |-------|--------|
-| WhatsApp messages | **Mocked** — printed to the server terminal, not really sent |
+| WhatsApp messages | Real sending via Meta Cloud API, configured in **Admin → WhatsApp**. **Two independent switches**, both **OFF by default**: *Login OTP* and *Status updates* (DEC-051/053). Only AUTHENTICATION/UTILITY templates are allowed (DEC-052) |
 | Email / SMS | Logged as "queued" — providers not wired yet |
 | Google Meet | Coordinator pastes a link manually; no auto-created meetings |
 | Live updates | Pages refresh on action / every 30s; no real-time push yet |
 | Arabic wording | Provisional — needs a native speaker's review |
 | Print / PDF | Uses the browser's print dialog, not a server-generated PDF |
-| OTP | Always `123456` in local mode |
-| Expiry / job tests (E6, E15) | Only run on the local database |
+| OTP | Real 6-digit WhatsApp code · 10-minute validity · 5 sends/hour · 5 wrong attempts → 15-minute lock. No mock code exists |
+| Expiry / job tests (E6, E15) | Retired with the local database — they backdated rows directly in SQLite |
+| Local database | **Removed** (DEC-054). Supabase is the single source of truth for every environment |
 
 If you find something **outside** this list — that's a real gap. Tell us!
 

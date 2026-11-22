@@ -5,6 +5,18 @@ const RUN = Date.now().toString().slice(-7);
 let passed = 0, failed = 0;
 const failures = [];
 
+// DEC-054: retired by default. Supabase is now the single source of truth, so this suite
+// would write test patients/cases into the LIVE database. It also depends on mock OTP
+// (123456) and demo staff accounts, neither of which exists any more. Kept for reference;
+// opt in only against a disposable target: E2E_ALLOW=true npm run e2e
+if (process.env.E2E_ALLOW !== 'true') {
+  console.error('Retired (DEC-054): this acceptance suite needs mock auth + demo staff, and it');
+  console.error('writes patients/cases into whatever database the target API uses — now production.');
+  console.error('Test manually in the browser instead (see TESTING.md). To run it anyway against');
+  console.error('a disposable target: E2E_ALLOW=true npm run e2e');
+  process.exit(1);
+}
+
 function check(id, cond, detail = '') {
   if (cond) { passed++; console.log(`  PASS ${id}`); }
   else { failed++; failures.push(id); console.log(`  FAIL ${id} ${detail}`); }
@@ -275,29 +287,9 @@ async function main() {
   const e14 = await coord.post(`/cases/${earlyCase.data.id}/assign`, { staff_id: doctorId });
   check('E14-early-assign', e14.status === 409);
 
-  // E6: expired link (local driver only — DEC-023). Fresh GMO case so assignment is legal.
-  if (health.driver === 'local') {
-    const gmoE = await pat.post('/cases', { service_type: 'GMO', specialty: 'Oncology', purpose: 'Complex Case Review', reason: 'E6 expiry test case' });
-    await coord.post(`/cases/${gmoE.data.id}/confirm-payment`, { note: 'e6' });
-    const link2 = await coord.post(`/cases/${gmoE.data.id}/assign`, { specialist_name: 'V. Prasanth', specialist_phone: '+919800000000' });
-    const token2 = link2.data.review_url.split('/').pop();
-    const Database = (await import('better-sqlite3')).default;
-    const path = await import('path');
-    const { fileURLToPath } = await import('url');
-    const dbPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.data', 'alodoc.sqlite');
-    const sqlite = new Database(dbPath);
-    const crypto = await import('crypto');
-    const hash = crypto.createHash('sha256').update(token2).digest('hex');
-    sqlite.prepare('update magic_link_tokens set expires_at = ? where token_hash = ?').run(new Date(Date.now() - 1000).toISOString(), hash);
-    sqlite.close();
-    const e6 = await anon.get(`/review/${token2}`);
-    check('E6', e6.status === 403 && e6.data.error === 'expired');
-    // E8: valid token cannot reach another case's documents
-    const foreignDoc = await anon.get(`/review/${token2}/documents/${(await pat.get(`/cases/${caseA}`)).data.documents?.[0]?.id || 'none'}`);
-    check('E8', foreignDoc.status === 403 || foreignDoc.status === 404);
-  } else {
-    console.log('  SKIP E6/E8 (requires local driver for expiry manipulation)');
-  }
+  // E6/E8 (DEC-023): retired with the local driver (DEC-054). Expiry was forced by
+  // backdating magic_link_tokens directly in SQLite; there is no local database now.
+  console.log('  SKIP E6/E8 (local driver removed, DEC-054)');
 
   // E7: revoked link (token from B8 already revoked)
   const e7 = await anon.get(`/review/${token}`);
@@ -322,42 +314,9 @@ async function main() {
   const cancelNoReason = await coord.post(`/cases/${caseD}/cancel`, {});
   check('E13-cancel-reason', cancelNoReason.status === 400 || cancelNoReason.status === 409);
 
-  // E15 (local-only, DEC-023 pattern): background jobs — N-12 SLA breach alert,
-  // N-10 T-24h reminder, auto IN_PROGRESS at appointment time. Waits one tick cycle.
-  if (health.driver === 'local') {
-    const mk = async reason => (await pat.post('/cases', { service_type: 'CONSULTATION', service_subtype: 'ONLINE', reason })).data;
-    const j1 = await mk('E15 sla + reminder');
-    const j2 = await mk('E15 auto start');
-    for (const j of [j1, j2]) {
-      await coord.post(`/cases/${j.id}/confirm-payment`, { note: 'e15' });
-      await coord.post(`/cases/${j.id}/assign`, { staff_id: doctorId });
-      await coord.post(`/cases/${j.id}/schedule`, { scheduled_at: new Date(Date.now() + 2 * 3600_000).toISOString() });
-    }
-    const Database = (await import('better-sqlite3')).default;
-    const path = await import('path');
-    const { fileURLToPath } = await import('url');
-    const sqlite = new Database(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.data', 'alodoc.sqlite'));
-    const past = new Date(Date.now() - 60_000).toISOString();
-    const soon = new Date(Date.now() + 23 * 3600_000).toISOString();
-    sqlite.prepare('update cases set sla_due_at = ?, sla_alerted = 0 where id = ?').run(past, j1.id);
-    sqlite.prepare('update consultations set scheduled_at = ?, reminder_sent = 0 where case_id = ?').run(soon, j1.id);
-    sqlite.prepare('update consultations set scheduled_at = ? where case_id = ?').run(past, j2.id);
-    sqlite.close();
-    let slaOk = false, remOk = false, startOk = false;
-    for (let i = 0; i < 16 && !(slaOk && remOk && startOk); i++) {
-      await new Promise(r => setTimeout(r, 5000));
-      const cn = await coord.get('/notifications');
-      slaOk = cn.data.items.some(n => n.event_type === 'N-12' && n.case_id === j1.id);
-      const pn = await pat.get('/notifications');
-      remOk = pn.data.items.some(n => n.event_type === 'N-10' && n.case_id === j1.id);
-      startOk = (await coord.get(`/cases/${j2.id}`)).data.status === 'IN_PROGRESS';
-    }
-    check('E15-sla-alert', slaOk);
-    check('E15-reminder', remOk);
-    check('E15-auto-start', startOk);
-  } else {
-    console.log('  SKIP E15 (requires local driver for time manipulation)');
-  }
+  // E15 (DEC-023 pattern): retired with the local driver (DEC-054). SLA breach, T-24h
+  // reminder and auto IN_PROGRESS were forced by backdating cases/consultations in SQLite.
+  console.log('  SKIP E15 (local driver removed, DEC-054)');
 
   // E16 (DEC-045): lockout protection — the last active admin cannot be deactivated.
   const staffList = await admin.get('/admin/staff');
