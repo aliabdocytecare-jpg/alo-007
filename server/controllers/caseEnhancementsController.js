@@ -5,6 +5,7 @@ import { db } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
 import { transition } from '../services/caseService.js';
 import { notify, notifyCoordinators } from '../services/notificationService.js';
+import { buildCaseReportPdf } from '../services/pdfReportService.js';
 
 export const hashToken = (t) => crypto.createHash('sha256').update(t).digest('hex');
 
@@ -514,6 +515,49 @@ export const publishFinalReport = ah(async (req, res) => {
   });
 
   res.json({ ok: true, report: published });
+});
+
+/**
+ * GET /api/v1/cases/:id/report/pdf
+ * Generates and downloads the official medical report as a formatted PDF
+ */
+export const downloadReportPdf = ah(async (req, res) => {
+  const c = req.case;
+
+  // Retrieve patient
+  const { data: patient } = await db
+    .from('patients')
+    .select('*')
+    .eq('id', c.patient_id)
+    .maybeSingle();
+
+  // Retrieve prescriptions if any
+  const { data: rxList } = await db
+    .from('prescriptions')
+    .select('*')
+    .eq('case_id', c.id);
+
+  // Retrieve consultation details if any
+  const { data: consult } = await db
+    .from('consultations')
+    .select('*')
+    .eq('case_id', c.id)
+    .maybeSingle();
+
+  const caseWithDetails = {
+    ...c,
+    prescriptions: rxList || [],
+    consultation: consult || null
+  };
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Medical_Report_${c.case_number || 'case'}.pdf"`);
+
+  buildCaseReportPdf({
+    caseData: caseWithDetails,
+    patientData: patient || {},
+    streamRes: res
+  });
 });
 
 export const getPublicReportsRequest = ah(async (req, res) => {

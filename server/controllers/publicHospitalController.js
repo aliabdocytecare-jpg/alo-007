@@ -1,6 +1,7 @@
 // DEC-056: Public Hospital Endpoints (Kiosk, Waiting Screen, Patient Status Page)
 import { db } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
+import { queueEvents, emitQueueUpdate } from '../services/realtimeService.js';
 
 /**
  * Helper to extract first name for patient privacy
@@ -132,6 +133,8 @@ export const kioskCheckin = ah(async (req, res) => {
     note: `Checked in via self-service kiosk. Queue #${queueNumber}`
   });
 
+  emitQueueUpdate(hosp.id, { event: 'kiosk_checkin', queue_number: queueNumber });
+
   res.json({
     ok: true,
     queue_number: queueNumber,
@@ -190,23 +193,15 @@ export const getPublicCaseStatus = ah(async (req, res) => {
   });
 });
 
-/**
- * GET /api/v1/public/screen/:pin/waiting
- * Waiting room TV queue display feed
- */
-export const getWaitingScreenFeed = ah(async (req, res) => {
-  const { pin } = req.params;
-
+export async function fetchWaitingScreenData(pin) {
   const { data: hosp } = await db
     .from('hospitals')
-    .select('id, name, name_ar, logo_url, primary_color')
+    .select('id, name, name_ar, logo_url, primary_color, city')
     .eq('kiosk_pin', pin.trim())
     .eq('is_active', true)
     .maybeSingle();
 
-  if (!hosp) throw httpError(404, 'Invalid screen pairing PIN');
-
-  const todayStr = new Date().toISOString().split('T')[0];
+  if (!hosp) return null;
 
   const { data: cases } = await db
     .from('hospital_cases')
@@ -227,6 +222,7 @@ export const getWaitingScreenFeed = ah(async (req, res) => {
     .filter(c => c.arrival_status === 'in_clinic')
     .map(c => ({
       queue_number: c.queue_number,
+      doctor_name: docMap[c.assigned_doctor_id] || 'Clinic',
       doctor: docMap[c.assigned_doctor_id] || 'Clinic'
     }));
 
@@ -234,13 +230,79 @@ export const getWaitingScreenFeed = ah(async (req, res) => {
     .filter(c => c.arrival_status === 'arrived')
     .map(c => ({
       queue_number: c.queue_number,
-      appointment_time: c.appointment_time
+      appointment_time: c.appointment_time,
+      estimated_wait_min: 15
     }));
 
-  res.json({
+  return {
     ok: true,
+    hospital_name: hosp.name,
+    city: hosp.city,
     hospital: hosp,
+    now_calling: calling,
     calling,
+    waiting_queue: waiting,
     waiting
+  };
+}
+
+/**
+ * GET /api/v1/public/screen/:pin/waiting
+ * Waiting room TV queue display feed (REST fallback)
+ */
+export const getWaitingScreenFeed = ah(async (req, res) => {
+  const { pin } = req.params;
+  const data = await fetchWaitingScreenData(pin);
+  if (!data) throw httpError(404, 'Invalid screen pairing PIN');
+  res.json(data);
+});
+
+/**
+ * GET /api/v1/public/screen/:pin/waiting/stream
+ * Real-time Server-Sent Events (SSE) stream for Waiting Room TV Screen
+ */
+export const streamWaitingScreen = ah(async (req, res) => {
+  const { pin } = req.params;
+  const initialData = await fetchWaitingScreenData(pin);
+  if (!initialData) throw httpError(404, 'Invalid screen pairing PIN');
+
+  const hospId = initialData.hospital.id;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+
+  // Send initial snapshot
+  res.write(`data: ${JSON.stringify(initialData)}\n\n`);
+
+  // Listener for instant updates
+  const onQueueUpdate = async (eventDetail) => {
+    if (eventDetail.hospitalId !== hospId) return;
+    try {
+      const fresh = await fetchWaitingScreenData(pin);
+      if (fresh) {
+        if (eventDetail.just_called) {
+          fresh.just_called = eventDetail.just_called;
+        }
+        res.write(`data: ${JSON.stringify(fresh)}\n\n`);
+      }
+    } catch (e) {
+      // client connection closed or error
+    }
+  };
+
+  queueEvents.on('queue_update', onQueueUpdate);
+
+  // Heartbeat comment every 20s to keep connection open through firewalls/proxies
+  const heartbeat = setInterval(() => {
+    res.write(': ping\n\n');
+  }, 20_000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    queueEvents.off('queue_update', onQueueUpdate);
   });
 });

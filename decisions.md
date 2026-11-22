@@ -424,6 +424,27 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Rationale:** Completes the end-to-end user experience for physical clinic day operations, patient self-service, remote case coordination, and global second opinion reviews within a unified, same-origin full-stack architecture.
 - **Reference:** DEC-056 through DEC-060, `HOSPITAL-AND-CASE-PORTAL-PLAN.md`, `client/src/App.jsx`, `client/src/pages/public/*`, `client/src/pages/hospital/*`, `client/src/pages/staff/*`.
 
+## DEC-062 — Real-Time Waiting Screen Queue Stream (SSE & Web Audio Chime) & Medical Report PDF Generation
+- **Decision:** Implemented sub-second real-time waiting room TV queue updates and server-side medical report PDF generation:
+  1. Real-Time Waiting Screen Queue Stream:
+     - Implemented `server/services/realtimeService.js` with `QueueEventEmitter` and `emitQueueUpdate(hospitalId, payload)`.
+     - Added SSE stream endpoint: `GET /api/v1/public/screen/:pin/waiting/stream` (`server/controllers/publicHospitalController.js`) streaming live queue state over HTTP with automated 20s keep-alive heartbeat.
+     - Wired real-time triggers in `receptionController.js` (patient check-in, arrival status updates), `publicHospitalController.js` (kiosk check-in), and `bridgeController.js` (referral bookings).
+     - Upgraded `client/src/pages/public/WaitingScreen.jsx` with native `EventSource` listener, real-time live connection badge, and synthesized dual-tone Web Audio chime (C5/E5 sine waves) when a patient is called into clinic. Kept 15s interval poll as resilient fallback.
+  2. Medical Report PDF Generation:
+     - Added `pdfkit` to `server/package.json` for pure-JS server-side PDF generation (zero headless browser or C++ runtime dependencies).
+     - Implemented `server/services/pdfReportService.js` (`buildCaseReportPdf`) generating formatted, publication-grade medical consultation reports with patient metadata, clinical indications, diagnostic findings, prescriptions table, and 4-point Clinical Safety Verification Stamp.
+     - Added PDF download endpoint: `GET /api/v1/cases/:id/report/pdf` (`server/controllers/caseEnhancementsController.js`).
+     - Added direct "Download PDF Report" actions in `client/src/pages/patient/CaseView.jsx` and `client/src/pages/staff/CaseOps.jsx`.
+  3. Notification & Claims Policy Confirmation:
+     - Secondary notification channels (Email/SMS) remain deferred in accordance with the WhatsApp-first regional strategy.
+     - Clinic billing and health insurance claims remain deferred.
+     - WhatsApp outbound switches remain OFF intentionally to avoid billing messages during development until human review testing is conducted.
+  - Verification: Automated suite `server/scripts/test-phase7-enhancements.mjs` executed 100% passing checks verifying SSE real-time broadcast and PDF header binary generation against live Supabase; production client compiled cleanly via `vite build` in 793ms.
+- **Rationale:** Waiting room screens require immediate, sub-second visual and audible feedback when a ticket is called. Patients and clinicians require formal, downloadable PDF medical reports for clinical records and pharmacy presentation.
+- **Reference:** DEC-056, DEC-058, DEC-059, `server/services/realtimeService.js`, `server/services/pdfReportService.js`, `server/controllers/publicHospitalController.js`, `server/scripts/test-phase7-enhancements.mjs`.
+
+
 
 
 

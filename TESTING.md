@@ -432,7 +432,10 @@ node server/scripts/test-phase4.mjs
 # 5. Phase 5: Bridge 1 & Bridge 2 Native Transactions (17 checks)
 node server/scripts/test-phase5.mjs
 
-# 6. Frontend Production Compilation (Vite build)
+# 6. Real-Time Queue Stream (SSE & Chime) & Medical Report PDF Generation
+NO_LISTEN=1 node --env-file=server/.env server/scripts/test-phase7-enhancements.mjs
+
+# 7. Frontend Production Compilation (Vite build)
 npm --prefix client run build
 ```
 

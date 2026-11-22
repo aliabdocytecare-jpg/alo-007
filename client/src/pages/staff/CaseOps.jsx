@@ -187,7 +187,17 @@ function CoordinatorPanel({ c, reload }) {
         <div style={{ marginTop: 8 }}>
           <h3>{t('reportPreview')}</h3>
           <pre className="report">{reportText}</pre>
-          <button onClick={() => { if (window.confirm(t('confirmSubmit'))) run(() => api.post(`/cases/${c.id}/release`)); }}>{t('release')}</button>
+          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+            <button onClick={() => { if (window.confirm(t('confirmSubmit'))) run(() => api.post(`/cases/${c.id}/release`)); }}>{t('release')}</button>
+            <a
+              className="btn"
+              href={`/api/v1/cases/${c.id}/report/pdf`}
+              download={`Medical_Report_${c.case_number}.pdf`}
+              style={{ textDecoration: 'none', display: 'inline-block' }}
+            >
+              Download PDF Report
+            </a>
+          </div>
         </div>
       )}
 

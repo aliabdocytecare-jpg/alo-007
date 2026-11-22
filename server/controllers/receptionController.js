@@ -1,6 +1,7 @@
 // DEC-056: Reception Operations Controller (Queue, Check-in, Appointment Decisions)
 import { db } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
+import { emitQueueUpdate } from '../services/realtimeService.js';
 
 /**
  * Calculates next daily queue number for a hospital (e.g. A-001, A-002)
@@ -134,6 +135,8 @@ export const checkinPatient = ah(async (req, res) => {
     hospitalId: req.tenant.id
   });
 
+  emitQueueUpdate(req.tenant.id, { event: 'reception_checkin', queue_number: queueNumber });
+
   res.json({
     ok: true,
     case_id: c.id,
@@ -188,6 +191,13 @@ export const updateArrivalStatus = ah(async (req, res) => {
     actor_id: req.staff?.id || null,
     actor_role: req.staff?.role || 'reception',
     note: note || `Status updated to ${arrival_status}`
+  });
+
+  emitQueueUpdate(req.tenant.id, {
+    event: 'arrival_status_changed',
+    arrival_status,
+    queue_number: c.queue_number,
+    just_called: arrival_status === 'in_clinic' ? c.queue_number : null
   });
 
   res.json({ ok: true, case: updated });

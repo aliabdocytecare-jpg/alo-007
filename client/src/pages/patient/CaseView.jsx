@@ -60,14 +60,24 @@ export default function CaseView() {
         </section>
       )}
 
-      {/* DEC-032/036: no report box for SERVICE cases or cancelled cases — never promise a report that will not come. */}
+      {/* DEC-032/036 / DEC-062: downloadable PDF report for patients */}
       {c.service_type !== 'SERVICE' && c.status !== 'CANCELLED' && (
         <section className="box">
           <h2>{t('report')}</h2>
-          {c.report_released && c.report ? (
+          {(c.report_released || c.final_report_published) && (c.report || c.final_report_en) ? (
             <>
-              <pre className="report">{c.report}</pre>
-              <button className="no-print" onClick={() => window.print()}>{t('print')}</button>
+              <pre className="report">{c.report || c.final_report_en}</pre>
+              <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                <button className="no-print" onClick={() => window.print()}>{t('print')}</button>
+                <a
+                  className="btn no-print"
+                  href={`/api/v1/cases/${c.id}/report/pdf`}
+                  download={`Medical_Report_${c.case_number}.pdf`}
+                  style={{ textDecoration: 'none', display: 'inline-block' }}
+                >
+                  Download PDF Report
+                </a>
+              </div>
             </>
           ) : <p className="muted">{t('reportPending')}</p>}
         </section>

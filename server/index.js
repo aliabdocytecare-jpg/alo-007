@@ -36,7 +36,7 @@ import { notify, notifyCoordinators, notifyAdmins } from './services/notificatio
 import { getWhatsAppConfig, whatsappMode, checkTemplateDrift } from './services/whatsappService.js';
 import { TERMINAL } from './services/stateMachine.js';
 
-const app = express();
+export const app = express();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.set('trust proxy', 1); // Nginx/Traefik reverse proxy (Blueprint §6)
 // DEC-049: CSP tuned so the same-origin React SPA works (inline styles/scripts, self API/PDF).
@@ -137,6 +137,7 @@ api.get('/cases/:id/reviews', requireAuth, loadCase, requireCaseAccess, caseEnha
 
 api.put('/cases/:id/final-report', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.saveFinalReportDraft);
 api.post('/cases/:id/final-report/publish', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.publishFinalReport);
+api.get('/cases/:id/report/pdf', requireAuth, loadCase, requireCaseAccess, caseEnhancements.downloadReportPdf);
 
 // ---- Bridge 1: Online Intake ➔ In-person Clinic (DEC-056) ----
 api.post('/cases/:id/refer-to-hospital', requireRole('coordinator', 'admin', 'nurse'), loadCase, requireCaseAccess, bridge.referToHospital);
@@ -220,6 +221,7 @@ api.get('/public/kiosk/:pin', publicHosp.getKioskConfig);
 api.post('/public/kiosk/:pin/checkin', publicHosp.kioskCheckin);
 api.get('/public/case/:code', publicHosp.getPublicCaseStatus);
 api.get('/public/screen/:pin/waiting', publicHosp.getWaitingScreenFeed);
+api.get('/public/screen/:pin/waiting/stream', publicHosp.streamWaitingScreen);
 api.get('/public/reports-request/:token', reviewLimiter, caseEnhancements.getPublicReportsRequest);
 api.post('/public/reports-request/:token/upload', reviewLimiter, docs.upload.single('file'), caseEnhancements.uploadPublicReportsRequest);
 
@@ -342,12 +344,14 @@ async function tick() {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
-  console.log(`AloDoc API on http://localhost:${PORT} (database: Supabase — single source of truth, DEC-054)`);
-  const { count } = await db.from('staff_users').select('*', { count: 'exact', head: true });
-  if (!count) console.log('No staff yet. Bootstrap the first admin: node scripts/create-admin.mjs');
-  setInterval(tick, 60_000);
-  tick();
-});
+if (process.env.NODE_ENV !== 'test' && !process.env.NO_LISTEN) {
+  app.listen(PORT, async () => {
+    console.log(`AloDoc API on http://localhost:${PORT} (database: Supabase — single source of truth, DEC-054)`);
+    const { count } = await db.from('staff_users').select('*', { count: 'exact', head: true });
+    if (!count) console.log('No staff yet. Bootstrap the first admin: node scripts/create-admin.mjs');
+    setInterval(tick, 60_000);
+    tick();
+  });
+}
 
 export default app;
