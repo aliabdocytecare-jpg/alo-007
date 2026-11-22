@@ -466,6 +466,18 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Rationale:** Ensures international specialists can inspect diagnostic imaging, physical day-clinic patients receive downloadable medical visit sheets, waiting patients receive immediate mobile call alerts, phlebotomists can print collection tube labels, and lobby kiosks preserve patient privacy.
 - **Reference:** DEC-056 through DEC-062, `server/controllers/bridgeController.js`, `server/controllers/hospitalCaseController.js`, `server/controllers/publicHospitalController.js`, `server/services/pdfReportService.js`, `server/scripts/test-phase8-gaps.mjs`.
 
+## DEC-064 — Mobile App Compatibility, Version Shielding & Rork Native Blueprint
+- **Decision:** Prepared backend and architecture specifications for Rork-generated native iOS (SwiftUI) and Android (Jetpack Compose) mobile clients:
+  1. Mobile App Version Guard:
+     - Implemented `GET /api/v1/app/version-check` in `server/index.js` returning `min_required_version`, `latest_version`, and `force_update` flags to prevent legacy app breakage without App Store churn.
+  2. Rork Native Architectural Blueprint:
+     - Created `RORK-MOBILE-BLUEPRINT.md` containing end-to-end API integration contracts, zero-hardcode thin-client design rules, bilingual RTL support, native vibration and SSE stream handling, and modular prompts for Rork AI.
+  3. Strict Additive Contracts:
+     - Verified that all endpoints support JSON payloads and Bearer tokens for mobile native clients without browser cookie dependencies.
+- **Rationale:** Rork compiles true platform-native code (Swift/Kotlin). Hardcoding clinical business rules or frequent schema alterations in the mobile client forces repeated App Store binary submissions. Decoupling the client into a server-driven UI surface with version-checking ensures the mobile app rarely needs recompiling.
+- **Reference:** DEC-004, DEC-056, DEC-062, DEC-063, `RORK-MOBILE-BLUEPRINT.md`, `server/index.js`.
+
+
 
 
 

@@ -242,6 +242,21 @@ api.post('/review/intl/:token/submit', reviewLimiter, bridge.submitIntlReview);
 api.get('/notifications', requireAuth, admin.listNotifications);
 api.post('/notifications/:id/read', requireAuth, admin.readNotification);
 
+// ---- Mobile App Version Check (DEC-064: Rork iOS & Android Client Support) ----
+api.get('/app/version-check', (req, res) => {
+  const platform = req.query.platform || 'ios';
+  res.json({
+    ok: true,
+    min_required_version: '1.0.0',
+    latest_version: '1.0.0',
+    force_update: false,
+    update_message: 'A new version of AloDoc is available with updated clinical features.',
+    store_url: platform === 'ios'
+      ? 'https://apps.apple.com/app/alodoc/id000000000'
+      : 'https://play.google.com/store/apps/details?id=online.alodoc.app'
+  });
+});
+
 app.use('/api/v1', api);
 app.get('/health', (req, res) => res.json({ ok: true, driver: 'supabase' }));
 
