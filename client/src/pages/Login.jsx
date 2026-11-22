@@ -18,11 +18,14 @@ export default function Login() {
   const [mock, setMock] = useState(false);
   const [reg, setReg] = useState({ full_name: '', dob: '', gender: '', nationality: '', email: '' });
   const [staff, setStaff] = useState({ email: '', password: '' });
+  const [hospPhone, setHospPhone] = useState('');
+  const [hospOtp, setHospOtp] = useState('');
+  const [hospOtpSent, setHospOtpSent] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
   if (session) {
-    return <Navigate to={session.kind === 'patient' ? '/' : session.role === 'admin' ? '/admin' : '/staff'} replace />;
+    return <Navigate to={session.kind === 'patient' ? '/' : session.hospital_id ? '/hospital' : session.role === 'admin' ? '/admin' : '/staff'} replace />;
   }
 
   const sendOtp = async () => {
@@ -55,6 +58,25 @@ export default function Login() {
     setBusy(false);
   };
 
+  const sendHospOtp = async () => {
+    setBusy(true); setErr('');
+    try {
+      await api.post('/auth/staff/otp/send', { phone: hospPhone });
+      setHospOtpSent(true);
+    } catch (e) { setErr(errMsg(e)); }
+    setBusy(false);
+  };
+
+  const verifyHospOtp = async () => {
+    setBusy(true); setErr('');
+    try {
+      await api.post('/auth/staff/otp/verify', { phone: hospPhone, otp: hospOtp });
+      await refresh();
+      nav('/hospital', { replace: true });
+    } catch (e) { setErr(errMsg(e)); }
+    setBusy(false);
+  };
+
   return (
     <div className="wrap" style={{ maxWidth: 560 }}>
       <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -64,8 +86,38 @@ export default function Login() {
       <div className="tabs">
         <button className={tab === 'patient' ? 'active' : ''} onClick={() => { setTab('patient'); setErr(''); }}>{t('patientLogin')}</button>
         <button className={tab === 'staff' ? 'active' : ''} onClick={() => { setTab('staff'); setErr(''); }}>{t('staffLogin')}</button>
+        <button className={tab === 'hospital' ? 'active' : ''} onClick={() => { setTab('hospital'); setErr(''); }}>Hospital Clinic (OTP)</button>
       </div>
       <Msg err={err} />
+      {tab === 'hospital' && (
+        <section className="box">
+          <h2>Hospital Clinic Staff Sign-In</h2>
+          <p className="muted">Saudi day-clinic doctors, receptionists, lab technicians, and pharmacists authenticate via WhatsApp OTP.</p>
+          <Field label={t('phone')}>
+            <input value={hospPhone} onChange={e => setHospPhone(e.target.value)} placeholder="05XXXXXXXX or +9665XXXXXXXX" dir="ltr" disabled={hospOtpSent} />
+          </Field>
+          {!hospOtpSent && (
+            <div className="row" style={{ marginTop: 12 }}>
+              <button disabled={busy || !hospPhone} onClick={sendHospOtp}>
+                {busy ? t('loading') : 'Send WhatsApp OTP'}
+              </button>
+            </div>
+          )}
+          {hospOtpSent && (
+            <>
+              <Field label={t('otp')}>
+                <input value={hospOtp} onChange={e => setHospOtp(e.target.value)} placeholder="6-digit code" dir="ltr" />
+              </Field>
+              <div className="row" style={{ marginTop: 12 }}>
+                <button disabled={busy || hospOtp.length < 4} onClick={verifyHospOtp}>
+                  {busy ? t('loading') : 'Verify & Enter Clinic Portal'}
+                </button>
+                <button type="button" className="btn" onClick={() => { setHospOtpSent(false); setHospOtp(''); }}>Change Phone</button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
       {tab === 'patient' && (
         <section className="box">
           <Field label={t('phone')}>

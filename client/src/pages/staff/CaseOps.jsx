@@ -101,14 +101,70 @@ function CoordinatorPanel({ c, reload }) {
 
       {c.service_type === 'GMO' && ['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status) && (
         <div style={{ marginTop: 8 }}>
-          <h3>{t('assignSpecialist')}</h3>
+          <h3>{t('assignSpecialist')} (Multi-Round Review)</h3>
           <div className="row">
-            <input style={{ maxWidth: 220 }} placeholder={t('specialistName')} value={spec.name} onChange={e => setSpec({ ...spec, name: e.target.value })} />
-            <input style={{ maxWidth: 200 }} placeholder="+91XXXXXXXXXX" value={spec.phone} onChange={e => setSpec({ ...spec, phone: e.target.value })} dir="ltr" />
-            <button disabled={!spec.name || !spec.phone} onClick={() => run(() => api.post(`/cases/${c.id}/assign`, { specialist_name: spec.name, specialist_phone: spec.phone }))}>{t('assign')}</button>
+            <input style={{ maxWidth: 200 }} placeholder={t('specialistName')} value={spec.name} onChange={e => setSpec({ ...spec, name: e.target.value })} />
+            <input style={{ maxWidth: 180 }} placeholder="+91XXXXXXXXXX" value={spec.phone} onChange={e => setSpec({ ...spec, phone: e.target.value })} dir="ltr" />
+            <select value={spec.request_type || 'fresh_case'} onChange={e => setSpec({ ...spec, request_type: e.target.value })} style={{ maxWidth: 160 }}>
+              <option value="fresh_case">Fresh Case</option>
+              <option value="additional_reports">Additional Reports</option>
+              <option value="second_review">Second Review</option>
+              <option value="follow_up">Follow-Up Review</option>
+            </select>
+            <button disabled={!spec.name || !spec.phone} onClick={() => run(() => api.post(`/cases/${c.id}/reviews/dispatch`, { specialist_name: spec.name, specialist_phone: spec.phone, request_type: spec.request_type || 'fresh_case' }))}>Dispatch Review</button>
           </div>
         </div>
       )}
+
+      {/* Bridge 1: Refer to Saudi Hospital Clinic */}
+      {['INITIAL_REVIEW', 'READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status) && (
+        <div style={{ marginTop: 14, border: '1px solid #000', padding: 12, background: '#fafafa' }}>
+          <h3>🏥 {t('referHospital')} (Bridge 1)</h3>
+          {c.hospital_handoff ? (
+            <div>
+              <p>✓ <strong>Referred to:</strong> {c.hospital_handoff.hospital_name || c.hospital_handoff.hospital_id}</p>
+              <p className="muted">Appointment: {c.hospital_handoff.appointment_date} {c.hospital_handoff.appointment_time} · Case: {c.hospital_handoff.hospital_case_number}</p>
+              <span className="badge" style={{ fontSize: 16 }}>Check-in Code: {c.hospital_handoff.checkin_code}</span>
+            </div>
+          ) : (
+            <Bridge1ReferralForm caseId={c.id} onReferred={reload} />
+          )}
+        </div>
+      )}
+
+      {/* Bilingual AI Summary Panel */}
+      <div style={{ marginTop: 14, border: '1px solid #000', padding: 12 }}>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <h3>🤖 {t('aiSummary')} [{c.ai_summary_status || 'none'}]</h3>
+          <div className="row">
+            <button onClick={() => run(() => api.post(`/cases/${c.id}/ai-summary/generate`))}>
+              {c.ai_summary_en ? 'Regenerate' : 'Generate AI Summary'}
+            </button>
+            {c.ai_summary_en && c.ai_summary_status !== 'approved' && (
+              <button onClick={() => run(() => api.post(`/cases/${c.id}/ai-summary/approve`))}>{t('aiApprove')}</button>
+            )}
+          </div>
+        </div>
+        {c.ai_summary_en && (
+          <div style={{ marginTop: 8 }}>
+            <p><strong>Clinical Presentation:</strong> {c.ai_summary_en.clinical_presentation}</p>
+            {c.ai_summary_en.key_findings && (
+              <p className="muted"><strong>Key Findings:</strong> {c.ai_summary_en.key_findings.join('; ')}</p>
+            )}
+            {c.ai_summary_en.pending_questions && (
+              <p className="muted"><strong>Pending Questions:</strong> {c.ai_summary_en.pending_questions.join('; ')}</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Itemized Reports Request Panel */}
+      <div style={{ marginTop: 14, border: '1px solid #000', padding: 12 }}>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <h3>📋 {t('reportsChecklist')}</h3>
+          <ItemizedReportsModal caseId={c.id} onRequested={reload} />
+        </div>
+      </div>
 
       {latestLink && (
         <div style={{ marginTop: 8 }}>
@@ -352,6 +408,142 @@ function DoctorPanel({ c, reload }) {
         </table>
       )}
     </section>
+  );
+}
+
+function Bridge1ReferralForm({ caseId, onReferred }) {
+  const { t } = useI18n();
+  const [hospitals, setHospitals] = useState([]);
+  const [hospId, setHospId] = useState('');
+  const [apptDate, setApptDate] = useState('');
+  const [apptTime, setApptTime] = useState('10:00');
+  const [summary, setSummary] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    api.get('/admin/hospitals').then(r => setHospitals(r.data.hospitals || [])).catch(() => {});
+  }, []);
+
+  const doRefer = async (e) => {
+    e?.preventDefault();
+    if (!hospId) return;
+    setBusy(true); setErr('');
+    try {
+      await api.post(`/cases/${caseId}/refer-to-hospital`, {
+        hospital_id: hospId,
+        appointment_date: apptDate || new Date().toISOString().split('T')[0],
+        appointment_time: apptTime || '10:00',
+        nurse_interview_summary: summary || 'Referred from online triage consultation'
+      });
+      onReferred?.();
+    } catch (e) {
+      setErr(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={doRefer} style={{ marginTop: 8 }}>
+      <Msg err={err} />
+      <div className="grid2">
+        <Field label="Target Saudi Hospital">
+          <select required value={hospId} onChange={e => setHospId(e.target.value)}>
+            <option value="">-- Choose Hospital --</option>
+            {hospitals.map(h => <option key={h.id} value={h.id}>{h.name} ({h.city})</option>)}
+          </select>
+        </Field>
+        <Field label="Appointment Date">
+          <input type="date" value={apptDate} onChange={e => setApptDate(e.target.value)} />
+        </Field>
+      </div>
+      <div className="grid2">
+        <Field label="Appointment Time">
+          <input type="time" value={apptTime} onChange={e => setApptTime(e.target.value)} />
+        </Field>
+        <Field label="Referral Note">
+          <input value={summary} onChange={e => setSummary(e.target.value)} placeholder="Triage referral note" />
+        </Field>
+      </div>
+      <button type="submit" disabled={busy || !hospId} style={{ marginTop: 8 }}>
+        {busy ? t('loading') : 'Book Slot & Generate Check-in Code'}
+      </button>
+    </form>
+  );
+}
+
+function ItemizedReportsModal({ caseId, onRequested }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState([{ name: '', required: true, category: 'Medical Report' }]);
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const addItem = () => setItems([...items, { name: '', required: true, category: 'Medical Report' }]);
+
+  const doSubmit = async (e) => {
+    e?.preventDefault();
+    const valid = items.filter(i => i.name.trim());
+    if (!valid.length) return;
+    setBusy(true); setErr('');
+    try {
+      await api.post(`/cases/${caseId}/reports-requests`, { items: valid, notes });
+      setOpen(false);
+      onRequested?.();
+    } catch (e) {
+      setErr(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) return <button onClick={() => setOpen(true)}>+ Request Checklist Items</button>;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div className="box" style={{ background: '#fff', maxWidth: 520, width: '90%' }}>
+        <h3>Request Missing Reports Checklist</h3>
+        <Msg err={err} />
+        <form onSubmit={doSubmit}>
+          {items.map((it, idx) => (
+            <div key={idx} className="row" style={{ marginBottom: 6 }}>
+              <input
+                required
+                style={{ flex: 1 }}
+                placeholder={`Item ${idx + 1} (e.g. ECG Strip)`}
+                value={it.name}
+                onChange={e => {
+                  const copy = [...items];
+                  copy[idx].name = e.target.value;
+                  setItems(copy);
+                }}
+              />
+              <label style={{ fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={it.required}
+                  onChange={e => {
+                    const copy = [...items];
+                    copy[idx].required = e.target.checked;
+                    setItems(copy);
+                  }}
+                /> Req
+              </label>
+            </div>
+          ))}
+          <button type="button" onClick={addItem} style={{ fontSize: 12, padding: '2px 8px', margin: '4px 0' }}>+ Add Item</button>
+          <Field label="Instructions Note for Patient">
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Please upload scans in original quality..." style={{ minHeight: 60 }} />
+          </Field>
+          <div className="row" style={{ marginTop: 12 }}>
+            <button type="submit" disabled={busy}>{busy ? t('loading') : 'Send Checklist via WhatsApp'}</button>
+            <button type="button" onClick={() => setOpen(false)}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

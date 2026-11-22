@@ -1,4 +1,4 @@
-// DEC-055: read-only preflight for the single-database deployment.
+// DEC-055 / DEC-056: read-only preflight for the single-database deployment.
 // Run before pushing (`npm run preflight`) and on the VPS after deploy.
 // Exit code 1 means: do not deploy / the running container is misconfigured.
 import 'dotenv/config';
@@ -31,6 +31,40 @@ if (url && key) {
 
   const { count, error } = await db.from('staff_users').select('*', { count: 'exact', head: true });
   add('database reachable (staff_users)', !error, error ? error.message : `${count ?? 0} staff account(s)`);
+
+  // Check hospital tables
+  const hospTables = [
+    'hospitals',
+    'hospital_patients',
+    'hospital_cases',
+    'hospital_case_timeline',
+    'hospital_documents',
+    'hospital_slot_templates',
+    'hospital_slots',
+    'hospital_appointment_requests',
+    'hospital_test_catalogue',
+    'hospital_lab_tests',
+    'hospital_medications',
+    'case_reviews',
+    'case_reports_requests',
+    'international_specialists',
+    'international_opinion_requests'
+  ];
+
+  let missingTables = [];
+  for (const t of hospTables) {
+    const { error: tErr } = await db.from(t).select('*', { count: 'exact', head: true });
+    if (tErr) missingTables.push(`${t} (${tErr.message})`);
+  }
+  add('DEC-056 hospital & review tables reachable', missingTables.length === 0, missingTables.length ? `missing: ${missingTables.join(', ')}` : `${hospTables.length} tables verified`);
+
+  // Integrity: no staff with hospital_id and null phone_e164
+  const { data: badStaff, error: badStaffErr } = await db
+    .from('staff_users')
+    .select('id')
+    .not('hospital_id', 'is', null)
+    .is('phone_e164', null);
+  add('hospital staff phone integrity', !badStaffErr && (!badStaff || badStaff.length === 0), badStaffErr ? badStaffErr.message : `${badStaff?.length || 0} violation(s)`);
 
   const { data: settings, error: settingsError } = await db.from('system_settings').select('key, value').like('key', 'whatsapp%');
   const cfg = Object.fromEntries((settings || []).map(s => [s.key, s.value]));

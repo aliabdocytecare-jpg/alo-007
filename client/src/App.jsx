@@ -13,6 +13,13 @@ import CaseOps from './pages/staff/CaseOps';
 import Admin from './pages/admin/Admin';
 import Review from './pages/Review';
 import Notifications from './pages/Notifications';
+import Kiosk from './pages/public/Kiosk';
+import WaitingScreen from './pages/public/WaitingScreen';
+import PatientTracker from './pages/public/PatientTracker';
+import ReportsUpload from './pages/public/ReportsUpload';
+import IntlReview from './pages/public/IntlReview';
+import HospitalDashboard from './pages/hospital/HospitalDashboard';
+import IntlOpinionsQueue from './pages/staff/IntlOpinionsQueue';
 import { ErrorBoundary } from './components/ui';
 
 function Layout({ children }) {
@@ -26,7 +33,7 @@ function Layout({ children }) {
     let live = true;
     const poll = () => api.get('/notifications').then(r => { if (live) setUnread(r.data.unread); }).catch(() => {});
     poll();
-    const iv = setInterval(poll, 30_000); // DEC-020: polling until Realtime phase
+    const iv = setInterval(poll, 30_000);
     return () => { live = false; clearInterval(iv); };
   }, [session]);
 
@@ -35,16 +42,32 @@ function Layout({ children }) {
   return (
     <>
       <header className="top">
-        <Link className="brand" to={session?.kind === 'patient' ? '/' : '/staff'}>{t('app')}</Link>
+        <Link className="brand" to={session?.kind === 'patient' ? '/' : session?.hospital_id ? '/hospital' : '/staff'}>
+          {t('app')}
+        </Link>
         <nav>
           {session?.kind === 'patient' && (<><Link to="/">{t('home')}</Link><Link to="/cases">{t('myCases')}</Link></>)}
-          {session?.kind === 'staff' && session.role !== 'admin' && <Link to="/staff">{t('dashboard')}</Link>}
-          {session?.role === 'admin' && (<><Link to="/staff">{t('dashboard')}</Link><Link to="/admin">{t('admin')}</Link></>)}
+          {session?.kind === 'staff' && !session.hospital_id && session.role !== 'admin' && (
+            <>
+              <Link to="/staff">{t('dashboard')}</Link>
+              {session.role === 'coordinator' && <Link to="/staff/intl-opinions">{t('intlQueue')}</Link>}
+            </>
+          )}
+          {session?.role === 'admin' && (
+            <>
+              <Link to="/staff">{t('dashboard')}</Link>
+              <Link to="/staff/intl-opinions">{t('intlQueue')}</Link>
+              <Link to="/admin">{t('admin')}</Link>
+            </>
+          )}
+          {session?.hospital_id && (
+            <Link to="/hospital">{session?.tenant?.name || 'Hospital Clinic'}</Link>
+          )}
           {session && <Link to="/notifications">{t('notifications')}{unread > 0 ? ` [${unread}]` : ''}</Link>}
         </nav>
         <span className="spacer" />
         <button onClick={toggle}>{t('language')}</button>
-        {session && <span className="muted">{session.profile?.full_name}</span>}
+        {session && <span className="muted">{session.profile?.full_name || session.email}</span>}
         {session && <button onClick={doLogout}>{t('logout')}</button>}
       </header>
       <main className="wrap">{children}</main>
@@ -57,8 +80,8 @@ function Guard({ roles, children }) {
   const { t } = useI18n();
   if (session === undefined) return <Layout><p>{t('loading')}</p></Layout>;
   if (!session) return <Navigate to="/login" replace />;
-  if (roles && !roles.includes(session.role)) {
-    return <Navigate to={session.kind === 'patient' ? '/' : session.role === 'admin' ? '/admin' : '/staff'} replace />;
+  if (roles && !roles.includes(session.role) && !roles.includes(session.kind)) {
+    return <Navigate to={session.kind === 'patient' ? '/' : session.hospital_id ? '/hospital' : session.role === 'admin' ? '/admin' : '/staff'} replace />;
   }
   return <Layout>{children}</Layout>;
 }
@@ -66,19 +89,36 @@ function Guard({ roles, children }) {
 export default function App() {
   return (
     <ErrorBoundary>
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/review/:token" element={<Review />} />
-      <Route path="/" element={<Guard roles={['patient']}><Home /></Guard>} />
-      <Route path="/book" element={<Guard roles={['patient']}><Book /></Guard>} />
-      <Route path="/cases" element={<Guard roles={['patient']}><MyCases /></Guard>} />
-      <Route path="/cases/:id" element={<Guard roles={['patient']}><CaseView /></Guard>} />
-      <Route path="/notifications" element={<Guard><Notifications /></Guard>} />
-      <Route path="/staff" element={<Guard roles={['nurse', 'coordinator', 'doctor', 'admin']}><StaffDashboard /></Guard>} />
-      <Route path="/staff/cases/:id" element={<Guard roles={['nurse', 'coordinator', 'doctor', 'admin']}><CaseOps /></Guard>} />
-      <Route path="/admin" element={<Guard roles={['admin']}><Admin /></Guard>} />
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
+      <Routes>
+        {/* Public & Specialist Routes (No Auth Required) */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/kiosk" element={<Kiosk />} />
+        <Route path="/screen" element={<WaitingScreen />} />
+        <Route path="/screen/:pin" element={<WaitingScreen />} />
+        <Route path="/p/:code" element={<PatientTracker />} />
+        <Route path="/upload-reports/:token" element={<ReportsUpload />} />
+        <Route path="/review/:token" element={<Review />} />
+        <Route path="/review/intl/:token" element={<IntlReview />} />
+
+        {/* Patient Portal */}
+        <Route path="/" element={<Guard roles={['patient']}><Home /></Guard>} />
+        <Route path="/book" element={<Guard roles={['patient']}><Book /></Guard>} />
+        <Route path="/cases" element={<Guard roles={['patient']}><MyCases /></Guard>} />
+        <Route path="/cases/:id" element={<Guard roles={['patient']}><CaseView /></Guard>} />
+
+        {/* Staff & Admin Portals */}
+        <Route path="/notifications" element={<Guard><Notifications /></Guard>} />
+        <Route path="/staff" element={<Guard roles={['nurse', 'coordinator', 'doctor', 'admin']}><StaffDashboard /></Guard>} />
+        <Route path="/staff/cases/:id" element={<Guard roles={['nurse', 'coordinator', 'doctor', 'admin']}><CaseOps /></Guard>} />
+        <Route path="/staff/intl-opinions" element={<Guard roles={['coordinator', 'admin']}><IntlOpinionsQueue /></Guard>} />
+        <Route path="/admin" element={<Guard roles={['admin']}><Admin /></Guard>} />
+
+        {/* Hospital Clinic Portal */}
+        <Route path="/hospital" element={<Guard><HospitalDashboard /></Guard>} />
+        <Route path="/hospital/*" element={<Guard><HospitalDashboard /></Guard>} />
+
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
     </ErrorBoundary>
   );
 }

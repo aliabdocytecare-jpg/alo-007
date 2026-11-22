@@ -1,5 +1,5 @@
 // Middleware pipeline step 3-4 (Blueprint §2): session resolver + RBAC guard.
-// DEC-014: HttpOnly JWT cookie, sliding expiry, staff is_active re-check per request.
+// DEC-014 / DEC-056: HttpOnly JWT cookie, sliding expiry, staff is_active re-check per request.
 import jwt from 'jsonwebtoken';
 import { db } from '../config/db.js';
 import { audit } from '../lib/helpers.js';
@@ -18,8 +18,8 @@ if (process.env.NODE_ENV === 'production') {
 export const PATIENT_TTL = 30 * 86400_000; // F-AUTH-02: 30 days
 export const STAFF_TTL = 8 * 3600_000;     // F-AUTH-03: 8 hours
 
-export function issueSession(res, { sub, role, kind }, maxAgeMs) {
-  const token = jwt.sign({ sub, role, kind }, SECRET, { expiresIn: Math.floor(maxAgeMs / 1000) });
+export function issueSession(res, { sub, role, kind, hospital_id = null }, maxAgeMs) {
+  const token = jwt.sign({ sub, role, kind, hospital_id }, SECRET, { expiresIn: Math.floor(maxAgeMs / 1000) });
   res.cookie(COOKIE, token, {
     httpOnly: true, sameSite: 'lax', path: '/',
     secure: process.env.NODE_ENV === 'production', maxAge: maxAgeMs
@@ -31,7 +31,12 @@ export function resolveSession(req, res, next) {
   if (token) {
     try {
       const payload = jwt.verify(token, SECRET);
-      req.session = { sub: payload.sub, role: payload.role, kind: payload.kind };
+      req.session = {
+        sub: payload.sub,
+        role: payload.role,
+        kind: payload.kind,
+        hospital_id: payload.hospital_id || null
+      };
       const maxAge = req.session.kind === 'patient' ? PATIENT_TTL : STAFF_TTL;
       issueSession(res, req.session, maxAge); // refreshed on activity
     } catch { /* expired/invalid -> anonymous */ }

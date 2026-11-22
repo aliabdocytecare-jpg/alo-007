@@ -283,3 +283,147 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Rationale:** The deployed artifact must contain exactly one data path, so what is verified on a laptop is what serves patients — no dual-driver branch and no SQLite file possible on the VPS. Keeping secrets out of git protects the service_role key (it bypasses the deny-all RLS) in a repository the client and its collaborators can read, and git history is permanent even after deletion. The preflight collapses three otherwise silent failure modes (missing key, short secret, mock auth on in production) into one fail-fast command that can be re-run against the live container after rollout.
 - **Consequences / follow-ups:** Local `server/.env` points at the same project, so laptop runs are real writes — test rows stay prefixed `TEST — …` and PITR/backups are mandatory. Patient login stays unavailable until an admin stores WABA ID / Phone Number ID / System User token in **Admin → WhatsApp** and enables the OTP channel (staff login is unaffected); status updates stay OFF during piloting to avoid per-transition billing (DEC-053). `server/.data/` and `server/.local-storage/` were deleted. The secondary admin account is no longer published in the client-visible README.
 - **Reference:** DEC-039, DEC-045, DEC-046, DEC-049, DEC-050, DEC-054; `server/config/db.js`, `server/middleware/auth.js`, `server/scripts/preflight.mjs`, `Dockerfile`, `.dockerignore`, `server/.env.production.example`; owner request Nov 22.
+
+
+## DEC-056 — Phase 1: Native Hospital & Case Portal Foundation (Database Migrations Applied & Verified)
+- **Decision:** The Base44 hospital day-clinic portal and advanced case portal capabilities are ported natively into AloDoc (`alo-007`) on the existing Supabase Postgres database (`ovkxuzstzgixjtvkhadf`) and Express backend. Applied four additive, non-breaking migrations (`20261123000001_hospitals.sql`, `20261123000002_case_portal_enhancements.sql`, `20261123000003_intl_opinions.sql`, `20261123000004_staff_auth.sql`) and verified `20261122000001_whatsapp_settings.sql` in `supabase_migrations.schema_migrations`.
+  - Added 15 new tables: `hospitals`, `hospital_patients`, `hospital_cases`, `hospital_case_timeline`, `hospital_documents`, `hospital_slot_templates`, `hospital_slots`, `hospital_appointment_requests`, `hospital_test_catalogue`, `hospital_lab_tests`, `hospital_lab_comments`, `hospital_medications`, `case_reviews`, `case_reports_requests`, `international_specialists`, `international_opinion_requests`.
+  - Hard tenant isolation enforced at the database level via composite foreign keys `(hospital_case_id, hospital_id) REFERENCES hospital_cases(id, hospital_id)`.
+  - Anti-double-booking constraint `UNIQUE(hospital_id, doctor_id, date, time)` applied to `hospital_slots`.
+  - Multi-tenant staff identity: `staff_users` augmented with `hospital_id`, `phone_e164`, `phone_verified_at`, and a global unique partial index on `phone_e164`. Email/password constraints relaxed for hospital staff (who authenticate solely via WhatsApp OTP).
+  - Scope realignment: `hospital_cases` includes `alo_case_id` and `alo_case_number` to enable atomic internal referrals from remote intake (Bridge 1), eliminating Base44's fragile HTTP webhook approach.
+  - Implemented `server/lib/phone.js` (E.164 normalization, Saudi mobile validation, and tenant-safe availability checks).
+  - Preflight suite (`server/scripts/preflight.mjs`) expanded to 13 checks covering hospital tables, staff phone integrity, and private storage buckets; all 13 checks pass green against the live Supabase database.
+- **Rationale:** Native porting avoids distributed failure modes, eliminates outbox synchronization lags, and allows referral slot claiming, check-in code generation, and case handoffs to occur in a single atomic PostgreSQL transaction (<50ms). Keeping `hospital_cases` distinct from `cases` preserves the integrity of both the 12-state remote machine and the 6-state clinic machine.
+- **Consequences / follow-ups:** Phase 1 complete and verified. Ready to proceed to Phase 2 (Tenancy Scoping Middleware & WhatsApp OTP Staff Authentication).
+- **Reference:** F-CASE, DEC-054, DEC-055, `HOSPITAL-AND-CASE-PORTAL-PLAN.md`, `supabase/migrations/20261123*.sql`, `server/scripts/preflight.mjs`, `server/lib/phone.js`.
+
+
+## DEC-057 — Phase 2: Multi-Tenant Scoping Middleware & WhatsApp OTP Staff Authentication
+- **Decision:** Implemented hospital multi-tenant authorization guards, tenant scoping query helpers, and the complete WhatsApp OTP staff authentication pipeline.
+  - Implemented `server/middleware/hospitalAuth.js` with:
+    - `requireHospitalMember`: re-reads staff row on every request to immediately enforce deactivations (Part 8.1), asserts active hospital affiliation, and mounts `req.tenant` and `req.staff`.
+    - `requireHospitalRole(...roles)`: role-based access control inside the hospital tenant (`doctor`, `reception`, `lab`, `pharmacy`, `hospital_admin`).
+    - `requireALOStaff`: asserts `req.session.hospital_id` is null, preventing any hospital admin from gaining ALO platform coordinator/admin permissions (D8).
+  - Implemented `server/lib/scope.js` with:
+    - `scoped(req, table)`: enforces that all hospital data queries are bound by `hospital_id = req.tenant.id`.
+    - `loadHospitalCase(req, res, next)`: loads hospital cases scoped to `req.tenant.id`; mismatches return 404 (never 403) to prevent cross-tenant existence probing.
+    - `sanitizeHospitalCaseForRole`: filters clinical notes from non-clinical roles (`reception`, `lab`, `pharmacy`).
+  - Implemented `server/controllers/hospitalAuthController.js`:
+    - `POST /auth/staff/otp/send`: rate-limited WhatsApp OTP dispatch for active staff members.
+    - `POST /auth/staff/otp/verify`: OTP verification, dual staff/patient identity resolution challenge, and session issuance (`hospital_id` in claims).
+    - `POST /auth/choose-role`: resolves dual identity challenges.
+    - `POST /auth/staff/claim-phone`: OTP proof-of-possession self-claim for verified inactive recycled numbers (D10 / Section 5.2).
+    - `GET /auth/me`: provides complete profile and active hospital branding context.
+  - Implemented `server/controllers/hospitalStaffController.js`:
+    - CRUD for hospital staff under `hospital_admin` scope (`doctor`, `reception`, `lab`, `pharmacy`).
+    - Duplicate phone rejection enforcing D10 message: `"This number is already part of our system, please provide a different number."`.
+    - Immediate deactivation toggle (`PATCH /hospital/staff/:id/active`).
+  - Implemented `server/controllers/hospitalAdminController.js`:
+    - ALO platform admin endpoints to provision hospitals, create `hospital_admin`, release inactive phones, and issue single-use 30-min break-glass login links (`STAFF_LOGIN_LINK_ISSUED`).
+  - Verification: Automated suite `server/scripts/test-phase2.mjs` executed 12/12 passing checks verifying phone normalization, hospital provisioning, duplicate rejection, query scoping, and immediate deactivation against live Supabase.
+- **Rationale:** Strict database-level and middleware-level scoping eliminates cross-tenant data leaks. Passwordless WhatsApp OTP eliminates shared PIN vulnerabilities, matching real clinician workflows in Saudi Arabia.
+- **Reference:** DEC-056, `HOSPITAL-AND-CASE-PORTAL-PLAN.md`, `server/middleware/hospitalAuth.js`, `server/lib/scope.js`, `server/controllers/hospitalAuthController.js`, `server/scripts/test-phase2.mjs`.
+
+## DEC-058 — Phase 3: The Hospital Day-Clinic Engine
+- **Decision:** Implemented and verified the complete day-clinic operations engine for Saudi hospitals.
+  - Implemented `server/lib/barcode128.js`: pure-JS Code 128B font encoding and SVG barcode renderer for specimen test tubes and patient wristbands.
+  - Implemented `server/services/hospitalSlotService.js`:
+    - `generateSlotsForHospital`: generates doctor consultation slots from weekly recurrence templates across a rolling 14-day horizon.
+    - `releaseExpiredFreeSlots`: automated hourly sweep releasing unbooked slots approaching within 24h threshold.
+    - Double-booking prevention enforced via `UNIQUE(hospital_id, doctor_id, date, time)`.
+  - Implemented `server/controllers/receptionController.js`:
+    - Daily queue numbering (`A-001`, `A-002`) grouped by arrival status (`scheduled`, `arrived`, `in_clinic`, `done`).
+    - Multi-method patient check-in (by 6-character uppercase check-in code or case ID) with idempotency.
+    - 2h SLA appointment request confirmation/proposal/decline workflow.
+  - Implemented `server/controllers/publicHospitalController.js`:
+    - Public kiosk tablet pairing via 6-digit hospital PIN (`/kiosk/pair`).
+    - Kiosk self-service check-in with bilingual feedback and queue slip data.
+    - Patient mobile live status page (`/p/:code`) with queue position and estimated wait time.
+    - Waiting room TV screen broadcast feed (`/screen/:token` or `/screen/h/:shortName`).
+  - Implemented `server/controllers/hospitalCaseController.js`:
+    - Hospital patient management (MRN uniqueness scoped per hospital).
+    - Physical clinic walk-in and referral case creation (`C-0001` format, 6-character check-in code excluding ambiguous characters).
+    - Doctor consultation note and clinical opinion recording.
+    - Scoped document attachment with category classification (`lab_report`, `radiology`, `prescription`, `clinical_note`, `intl_opinion`).
+  - Implemented `server/controllers/labController.js`:
+    - Hospital test catalogue CRUD (`hospital_test_catalogue`).
+    - Lab test order placement with automated specimen ID generation (`SPEC-<HOSP>-<HEX>`) and Code 128B SVG barcode.
+    - Lab result entry with critical alert flags and complete amendment audit trail (`previous_versions` jsonb history).
+    - Internal specimen communication (`hospital_lab_comments`).
+  - Implemented `server/controllers/pharmacyController.js`:
+    - Doctor prescription creation for clinic cases (`hospital_medications`).
+    - Pharmacy queue listing and dispensing confirmation with pharmacist note and timestamps.
+  - Verification: Automated suite `server/scripts/test-phase3.mjs` executed 19/19 passing tests verifying slot templates, double-booking rejection, patient creation, check-in queue numbering, consultation completion, barcode SVG generation, lab result versioning, pharmacy dispensing, and database cleanup.
+- **Rationale:** Physical day-clinic operations require resilient queue numbering, specimen barcode tracking, and complete audit history. Implementing this natively within AloDoc provides seamless coordination without third-party clinic tools.
+- **Reference:** DEC-056, DEC-057, `HOSPITAL-AND-CASE-PORTAL-PLAN.md`, `server/lib/barcode128.js`, `server/services/hospitalSlotService.js`, `server/controllers/receptionController.js`, `server/controllers/labController.js`, `server/controllers/pharmacyController.js`, `server/scripts/test-phase3.mjs`.
+
+## DEC-059 — Phase 4: Specialist & Coordinator Case Portal Upgrades
+- **Decision:** Implemented and verified the advanced coordinator tools and mobile specialist review pipeline.
+  - Bilingual AI Summary:
+    - Structured clinical schema (`clinical_presentation`, `key_findings`, `pending_questions`, `suggested_specialties`, `red_flags`) in English and Arabic.
+    - Lifecycle states (`none`, `draft`, `approved`) with coordinator audit tracking.
+  - Itemized Reports Request Checklist:
+    - Created `case_reports_requests` enabling coordinators to send itemized missing report requirements with required/optional flags.
+    - 7-day secure tokenized upload link dispatched to patient via WhatsApp.
+    - Status progression (`pending`, `partially_fulfilled`, `fulfilled`) with automatic return to `INITIAL_REVIEW` when fulfilled.
+  - Multi-Round Specialist Reviews:
+    - Extended `case_reviews` for multi-round reviews (`fresh_case`, `additional_reports`, `second_review`, `follow_up`).
+    - At dispatch time, an immutable `case_snapshot` is captured (case context, patient age/gender, and document manifest).
+    - Specialists review previous rounds for "Then vs. Now" longitudinal diffing.
+    - Integrated Decision Chips: agreement (`agrees_with_preliminary`, `modifies_preliminary`, `disagrees`), path (`medical_therapy`, `interventional`, `surgical`, `further_investigation`), and urgency (`routine`, `urgent`, `emergent`).
+    - Integrated 4-Box Opinion Schema: `clinical_findings`, `diagnostic_assessment`, `recommendations`, `follow_up_guidance`.
+    - Integrated Mobile Voice Dictation: specialist audio recordings uploaded directly to private storage bucket `case-documents` under `voice-notes/`.
+  - 3-Step Final Report Publisher:
+    - Step 1: Draft compilation and bilingual translation (`final_report_en`, `final_report_ar`).
+    - Step 2: Clinical Safety Checklist verification (`patient_identity_checked`, `questions_addressed`, `red_flags_cleared`, `translation_verified`).
+    - Step 3: Releasing final report to patient (`final_report_published = true`), case transition to `COMPLETED`, and WhatsApp notification dispatch (`N-09`).
+  - Verification: Automated suite `server/scripts/test-phase4.mjs` executed 17/17 passing tests verifying AI summary, checklist fulfillment, multi-round review dispatch, voice note upload, decision chips submission, "Then vs. Now" diffing, and final report publication against live Supabase.
+- **Rationale:** Remote second opinion cases frequently span multiple rounds and require structured decision categorization and voice dictation for busy international specialists.
+- **Reference:** DEC-056, DEC-057, DEC-058, `HOSPITAL-AND-CASE-PORTAL-PLAN.md`, `server/controllers/caseEnhancementsController.js`, `server/controllers/reviewController.js`, `server/scripts/test-phase4.mjs`.
+
+## DEC-060 — Phase 5: The Two Native Bridges
+- **Decision:** Implemented and verified the two native architectural bridges connecting online intake and physical clinic care without distributed webhook dependencies.
+  - Bridge 1 (Online Intake ➔ In-person Clinic):
+    - Implemented `POST /api/v1/cases/:id/refer-to-hospital` (`server/controllers/bridgeController.js`).
+    - Atomically assigns a verified doctor consultation slot in `hospital_slots` (enforcing anti-double-booking).
+    - Resolves or creates hospital patient record under target hospital with MRN.
+    - Generates daily clinic case (`C-0001` format) and 6-character check-in code (`checkin_code`).
+    - Links slot to clinic case, records hospital handoff in remote case (`cases.hospital_handoff`), and updates timeline.
+    - Dispatches WhatsApp appointment confirmation to patient with check-in code and queue tracking link (`/p/:code`).
+  - Bridge 2 (Saudi Hospital ➔ Global Specialist Second Opinion):
+    - Implemented `POST /api/v1/hospital/cases/:id/intl-opinion`: Saudi clinic doctor requests an international opinion with mandatory patient consent (`patient_consent: true`, `consented_by_name`).
+    - Implemented ALO Coordinator dispatch queue (`/staff/intl-opinions`, `/staff/intl-opinions/:id/dispatch`) and global specialist directory (`international_specialists`).
+    - Implemented privacy-minimized specialist portal (`/review/intl/:token`): presents clinical question, scans, and patient age/gender only (zero internal hospital staff notes or patient phone/contact numbers).
+    - Specialist submits opinion and recommendations; token is revoked immediately.
+    - Opinion is automatically appended directly to the Saudi clinic patient chart timeline (`hospital_case_timeline`), keeping all care data within the Saudi hospital context.
+  - Verification: Automated suite `server/scripts/test-phase5.mjs` executed 17/17 passing tests verifying atomic referral, check-in code generation, double-booking rejection, consented second opinion creation, coordinator dispatch, specialist review, token revocation, and timeline chart integration against live Supabase.
+- **Rationale:** Replacing external Base44 HTTP webhooks with native internal PostgreSQL transactions eliminates synchronization lags, avoids dropped webhooks, and ensures slot reservation, check-in code generation, and case handoffs succeed atomically or fail cleanly together.
+- **Reference:** DEC-056, DEC-057, DEC-058, DEC-059, `HOSPITAL-AND-CASE-PORTAL-PLAN.md`, `server/controllers/bridgeController.js`, `server/scripts/test-phase5.mjs`.
+
+## DEC-061 — Phase 6: Frontend Client Surfaces, Localization & Verification
+- **Decision:** Implemented and mounted all client surfaces, public kiosks, TV feeds, specialist portals, and bilingual RTL localization for the unified platform.
+  - Public & Specialist Surfaces:
+    - `client/src/pages/public/Kiosk.jsx`: Self-service check-in kiosk tablet interface with 6-digit hospital PIN pairing, 6-character check-in code input, and daily queue slip generator (`A-001`, `~15 min` estimated wait).
+    - `client/src/pages/public/WaitingScreen.jsx`: Fullscreen TV display feed for waiting rooms with real-time "Now Calling" board (`A-001 -> Clinic 3`), waiting queue (`A-002`, `A-003`), and live Riyadh digital clock.
+    - `client/src/pages/public/PatientTracker.jsx`: Patient mobile live queue tracker (`/p/:code`) with status badge, doctor name, and queue position countdown.
+    - `client/src/pages/public/ReportsUpload.jsx`: Patient itemized reports upload checklist (`/upload-reports/:token`) mapping uploaded files directly to required checklist items.
+    - `client/src/pages/public/IntlReview.jsx`: Privacy-minimized global specialist review portal (`/review/intl/:token`) with clinical question, scans preview, decision chips, and recommendation submission.
+  - Hospital Operations Portal (`client/src/pages/hospital/HospitalDashboard.jsx`):
+    - Multi-desk operational views: Reception desk (live queue & walk-in registration), Doctor consultation desk (notes, lab orders & prescriptions), Lab workbench (specimen barcode tracking & amendment audit trail), Pharmacy desk (dispensing queue), and Admin desk (staff & slot templates).
+  - ALO Staff & Specialist Enhancements:
+    - `client/src/pages/staff/IntlOpinionsQueue.jsx`: Coordinator queue for international second opinions with directory selection and magic link dispatch.
+    - `client/src/pages/staff/CaseOps.jsx`: Integrated Bilingual AI summary generation/approval, itemized reports request modal, and Bridge 1 "Refer to Saudi Hospital Clinic" form.
+    - `client/src/pages/Review.jsx`: Upgraded with Decision Chips, 4-Box Opinion Schema, HTML5 MediaRecorder mobile voice dictation, and "Then vs. Now" multi-round diffing viewer.
+    - `client/src/pages/Login.jsx`: Added Saudi clinic staff sign-in tab via WhatsApp OTP (`/auth/staff/otp/send` and `/auth/staff/otp/verify`).
+  - Bilingual Localization:
+    - Full English LTR and Arabic RTL translations added to `client/src/lib/i18n.jsx` for all new clinical, kiosk, lab, pharmacy, and specialist concepts.
+  - Strict Monochrome Styling:
+    - High-contrast black and white styling across all new views in accordance with DEC-004.
+  - Verification: Clean compilation of React 18 client via `vite build` (dist output generated in 777ms with zero errors).
+- **Rationale:** Completes the end-to-end user experience for physical clinic day operations, patient self-service, remote case coordination, and global second opinion reviews within a unified, same-origin full-stack architecture.
+- **Reference:** DEC-056 through DEC-060, `HOSPITAL-AND-CASE-PORTAL-PLAN.md`, `client/src/App.jsx`, `client/src/pages/public/*`, `client/src/pages/hospital/*`, `client/src/pages/staff/*`.
+
+
+
+
