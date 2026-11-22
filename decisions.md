@@ -477,6 +477,31 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Rationale:** Rork compiles true platform-native code (Swift/Kotlin). Hardcoding clinical business rules or frequent schema alterations in the mobile client forces repeated App Store binary submissions. Decoupling the client into a server-driven UI surface with version-checking ensures the mobile app rarely needs recompiling.
 - **Reference:** DEC-004, DEC-056, DEC-062, DEC-063, `RORK-MOBILE-BLUEPRINT.md`, `server/index.js`.
 
+## DEC-065 — Rork Native Mobile Full-Stack Optimizations
+- **Decision:** Implemented seven platform-native optimizations across the Express API and React client for complete compatibility with Rork-generated iOS and Android applications:
+  1. Dual-Mode Authentication (Bearer Token + HttpOnly Cookie):
+     - Enhanced `server/middleware/auth.js` (`resolveSession`) to seamlessly accept tokens from either `req.cookies['alodoc_session']` or `Authorization: Bearer <token>`.
+     - Updated `verifyOtp`, `register`, `staffLogin`, `verifyStaffOtp`, and `chooseRole` to return the signed JWT `token` in the response body alongside setting the cookie, enabling native clients (Swift `URLSession` / Android `OkHttp`) to store credentials in Keychain/EncryptedSharedPreferences.
+  2. Structured Machine-Readable Error Codes:
+     - Enhanced `httpError` in `server/lib/helpers.js` to attach string error codes (e.g. `UNAUTHORIZED`, `INVALID_OTP`, `OTP_EXPIRED`, `ACCOUNT_LOCKED`, `ACCOUNT_INACTIVE`, `CASE_NOT_FOUND`).
+     - Standardized error handlers to emit `{ error: string, code: string }`, allowing typed enums in native Swift/Kotlin models without brittle string matching.
+  3. Permissive CORS for Native Mobile Schemes:
+     - Updated CORS policy in `server/index.js` to permit non-browser requests where `req.headers.origin` is undefined (native mobile), as well as mobile app URI schemes (`capacitor://localhost`, `ionic://localhost`, `app://alodoc`).
+  4. Client Platform Telemetry & Version Headers:
+     - Added mobile telemetry middleware in `server/index.js` parsing `X-Client-Platform` (`ios` | `android` | `web`), `X-App-Version`, and `X-Device-Id`.
+     - Enriched Supabase `audit_log` records with client telemetry metadata for native mobile audit trails.
+  5. Universal Links & Deep Linking Endpoints:
+     - Implemented `GET /.well-known/apple-app-site-association` returning RFC-compliant Apple App Site Association JSON for iOS Universal Links.
+     - Implemented `GET /.well-known/assetlinks.json` returning Android Digital Asset Links JSON for Android App Links.
+  6. Mobile PDF Inline Streaming vs. Attachment:
+     - Updated `downloadReportPdf`, `downloadClinicVisitPdf`, and `downloadPublicClinicVisitPdf` to detect mobile clients or `?inline=true` query parameters and set `Content-Disposition: inline; ...` with `Accept-Ranges: bytes` for native `PDFKit` / `PdfRenderer` view controllers.
+  7. Web-to-Native Bridge Protocol (`client/src/lib/nativeBridge.js`):
+     - Created unified bidirectional bridge utility detecting iOS `WKScriptMessageHandler` (`window.webkit.messageHandlers.aloBridge`) and Android JavascriptInterface (`window.AndroidBridge`) with automatic fallback to browser APIs (`navigator.vibrate`, Web Audio).
+     - Integrated `NativeBridge.notifyTicketCalled(code)` into `PatientTracker.jsx`.
+- **Verification:** Created automated test suite `server/scripts/test-phase9-rork-optimizations.mjs` verifying Bearer authentication, machine error codes, universal linking, CORS permissiveness, telemetry auditing, and inline PDF disposition (10/10 passing checks). Frontend compiled cleanly via `vite build` in 924ms.
+- **Reference:** DEC-004, DEC-014, DEC-056, DEC-064, `client/src/lib/nativeBridge.js`, `server/scripts/test-phase9-rork-optimizations.mjs`.
+
+
 
 
 

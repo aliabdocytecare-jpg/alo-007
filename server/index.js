@@ -54,11 +54,45 @@ app.use(helmet({
     }
   }
 }));
-// DEC-047: CLIENT_ORIGIN may be comma-separated to allow dev + production frontends.
+// DEC-047 / DEC-065: CORS tuned for split web hosting + native mobile app schemes (Rork iOS/Android)
 const clientOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',').map(s => s.trim()).filter(Boolean);
-app.use(cors({ origin: clientOrigins.length === 1 ? clientOrigins[0] : clientOrigins, credentials: true }));
+app.use(cors({
+  origin: (origin, callback) => {
+    // 1. Native mobile requests (URLSession / OkHttp) do not send Origin header
+    if (!origin) return callback(null, true);
+    // 2. Explicitly allowed client origins or mobile schemes (Capacitor/Ionic/App)
+    if (
+      clientOrigins.includes(origin) ||
+      origin.startsWith('capacitor://') ||
+      origin.startsWith('ionic://') ||
+      origin.startsWith('app://')
+    ) {
+      return callback(null, true);
+    }
+    // 3. Localhost origins during development
+    if (process.env.NODE_ENV !== 'production' && /^http:\/\/localhost(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
+  credentials: true
+}));
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
+
+// DEC-065: Extract mobile client metadata for telemetry, auditing, and version enforcement
+app.use((req, res, next) => {
+  const platformHeader = (req.headers['x-client-platform'] || '').toLowerCase();
+  const appVersion = req.headers['x-app-version'] || null;
+  const deviceId = req.headers['x-device-id'] || null;
+  req.clientInfo = {
+    platform: ['ios', 'android', 'web'].includes(platformHeader) ? platformHeader : 'web',
+    appVersion,
+    deviceId
+  };
+  next();
+});
+
 app.use(resolveSession);
 
 const api = express.Router();
@@ -259,6 +293,48 @@ api.get('/app/version-check', (req, res) => {
 
 app.use('/api/v1', api);
 app.get('/health', (req, res) => res.json({ ok: true, driver: 'supabase' }));
+
+// ---- Deep Linking & Universal Links (iOS Apple App Site Association & Android Digital Asset Links — DEC-065) ----
+app.get('/.well-known/apple-app-site-association', (req, res) => {
+  const teamId = process.env.APPLE_TEAM_ID || 'TEAMID1234';
+  const bundleId = process.env.APP_BUNDLE_ID || 'online.alodoc.app';
+  res.setHeader('Content-Type', 'application/json');
+  res.json({
+    applinks: {
+      apps: [],
+      details: [
+        {
+          appIDs: [`${teamId}.${bundleId}`],
+          components: [
+            { "/": "/p/*", comment: "Mobile Patient Live Queue Tracker" },
+            { "/": "/cases/*", comment: "Patient Remote Cases" },
+            { "/": "/hospital/*", comment: "Hospital Clinic Portal" },
+            { "/": "/review/intl/*", comment: "Specialist Opinion Review" }
+          ]
+        }
+      ]
+    },
+    webcredentials: {
+      apps: [`${teamId}.${bundleId}`]
+    }
+  });
+});
+
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  const packageName = process.env.ANDROID_PACKAGE_NAME || 'online.alodoc.app';
+  const sha256Fingerprint = process.env.ANDROID_SHA256_FINGERPRINT || '00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00';
+  res.setHeader('Content-Type', 'application/json');
+  res.json([
+    {
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: {
+        namespace: "android_app",
+        package_name: packageName,
+        sha256_cert_fingerprints: [sha256Fingerprint]
+      }
+    }
+  ]);
+});
 
 // DEC-049: same-origin hosting (Option A) — serve the built React client + SPA fallback.
 // Active only when a build exists (production/Docker); in dev, Vite serves the UI on :5173.

@@ -550,8 +550,13 @@ export const downloadReportPdf = ah(async (req, res) => {
     consultation: consult || null
   };
 
+  const isMobile = ['ios', 'android'].includes(req.clientInfo?.platform || req.headers['x-client-platform']);
+  const inline = req.query.inline === 'true' || isMobile;
+  const disposition = inline ? 'inline' : 'attachment';
+
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="Medical_Report_${c.case_number || 'case'}.pdf"`);
+  res.setHeader('Content-Disposition', `${disposition}; filename="Medical_Report_${c.case_number || 'case'}.pdf"`);
+  res.setHeader('Accept-Ranges', 'bytes');
 
   buildCaseReportPdf({
     caseData: caseWithDetails,

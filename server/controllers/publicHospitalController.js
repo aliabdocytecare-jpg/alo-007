@@ -332,8 +332,13 @@ export const downloadPublicClinicVisitPdf = ah(async (req, res) => {
     db.from('hospital_medications').select('*').eq('hospital_case_id', c.id).order('created_at')
   ]);
 
+  const isMobile = ['ios', 'android'].includes(req.clientInfo?.platform || req.headers['x-client-platform']);
+  const inline = req.query.inline === 'true' || isMobile;
+  const disposition = inline ? 'inline' : 'attachment';
+
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="Clinic_Visit_${c.case_number || 'case'}.pdf"`);
+  res.setHeader('Content-Disposition', `${disposition}; filename="Clinic_Visit_${c.case_number || 'case'}.pdf"`);
+  res.setHeader('Accept-Ranges', 'bytes');
 
   buildHospitalClinicVisitPdf({
     hospitalCaseData: c,

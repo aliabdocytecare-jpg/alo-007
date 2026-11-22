@@ -174,7 +174,7 @@ export const verifyStaffOtp = ah(async (req, res) => {
     await db.from('staff_users').update({ phone_verified_at: new Date().toISOString() }).eq('id', staff.id);
   }
 
-  issueSession(res, {
+  const token = issueSession(res, {
     sub: staff.id,
     role: staff.role,
     kind: 'staff',
@@ -191,6 +191,7 @@ export const verifyStaffOtp = ah(async (req, res) => {
 
   res.json({
     ok: true,
+    token,
     user: {
       id: staff.id,
       role: staff.role,
@@ -228,7 +229,7 @@ export const chooseRole = ah(async (req, res) => {
       throw httpError(403, 'Staff account inactive');
     }
 
-    issueSession(res, {
+    const token = issueSession(res, {
       sub: staff.id,
       role: staff.role,
       kind: 'staff',
@@ -244,6 +245,7 @@ export const chooseRole = ah(async (req, res) => {
 
     return res.json({
       ok: true,
+      token,
       user: {
         id: staff.id,
         role: staff.role,
@@ -261,7 +263,7 @@ export const chooseRole = ah(async (req, res) => {
 
     if (!patient) throw httpError(404, 'Patient record not found');
 
-    issueSession(res, { sub: patient.id, role: 'patient', kind: 'patient' }, PATIENT_TTL);
+    const token = issueSession(res, { sub: patient.id, role: 'patient', kind: 'patient' }, PATIENT_TTL);
 
     await audit(req, 'LOGIN_ROLE_CHOSEN', {
       actorId: patient.id,
@@ -271,6 +273,7 @@ export const chooseRole = ah(async (req, res) => {
 
     return res.json({
       ok: true,
+      token,
       user: {
         id: patient.id,
         role: 'patient',

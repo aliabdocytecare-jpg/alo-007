@@ -8,11 +8,11 @@ import { db } from '../config/db.js';
 export async function requireHospitalMember(req, res, next) {
   try {
     if (!req.session) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ error: 'Not authenticated', code: 'UNAUTHORIZED' });
     }
 
     if (req.session.kind !== 'staff') {
-      return res.status(403).json({ error: 'Forbidden: staff account required' });
+      return res.status(403).json({ error: 'Forbidden: staff account required', code: 'STAFF_REQUIRED' });
     }
 
     // Re-read staff row by primary key (P8 / DEC-014 / DEC-056)
@@ -23,15 +23,15 @@ export async function requireHospitalMember(req, res, next) {
       .maybeSingle();
 
     if (staffErr || !staff) {
-      return res.status(401).json({ error: 'staff_not_found', message: 'Staff profile not found' });
+      return res.status(401).json({ error: 'staff_not_found', code: 'STAFF_NOT_FOUND', message: 'Staff profile not found' });
     }
 
     if (!staff.is_active) {
-      return res.status(401).json({ error: 'account_inactive', message: 'Account is deactivated' });
+      return res.status(401).json({ error: 'account_inactive', code: 'ACCOUNT_INACTIVE', message: 'Account is deactivated' });
     }
 
     if (!staff.hospital_id) {
-      return res.status(403).json({ error: 'not_hospital_staff', message: 'Hospital affiliation required' });
+      return res.status(403).json({ error: 'not_hospital_staff', code: 'NOT_HOSPITAL_STAFF', message: 'Hospital affiliation required' });
     }
 
     // Verify hospital active status
@@ -42,11 +42,11 @@ export async function requireHospitalMember(req, res, next) {
       .maybeSingle();
 
     if (hospErr || !hospital) {
-      return res.status(404).json({ error: 'hospital_not_found', message: 'Associated hospital not found' });
+      return res.status(404).json({ error: 'hospital_not_found', code: 'HOSPITAL_NOT_FOUND', message: 'Associated hospital not found' });
     }
 
     if (!hospital.is_active) {
-      return res.status(403).json({ error: 'hospital_inactive', message: 'This hospital is currently inactive' });
+      return res.status(403).json({ error: 'hospital_inactive', code: 'HOSPITAL_INACTIVE', message: 'This hospital is currently inactive' });
     }
 
     req.tenant = hospital;
@@ -63,12 +63,13 @@ export async function requireHospitalMember(req, res, next) {
 export function requireHospitalRole(...roles) {
   return (req, res, next) => {
     if (!req.staff) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ error: 'Not authenticated', code: 'UNAUTHORIZED' });
     }
 
     if (!roles.includes(req.staff.role)) {
       return res.status(403).json({
         error: 'Forbidden',
+        code: 'FORBIDDEN_ROLE',
         message: `Role ${req.staff.role} is not permitted. Allowed: ${roles.join(', ')}`
       });
     }

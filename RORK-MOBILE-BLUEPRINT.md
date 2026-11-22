@@ -55,32 +55,41 @@ My Cases & Intake    Live Queue   Reception Desk     Doctor Desk
 ## 3. API Integration Contract (Endpoints Reference)
 
 * **Base URL:** `https://alodoc.online/api/v1`
-* **Auth Headers:** `Authorization: Bearer <JWT>`
+* **Standard Headers:**
+  * `Authorization: Bearer <JWT>`
+  * `X-Client-Platform: ios` or `android`
+  * `X-App-Version: 1.0.0`
+  * `Accept-Language: ar` or `en`
+* **Error Response Contract (DEC-065):**
+  * HTTP 4xx/5xx: `{ "ok": false, "error": "Human readable message", "code": "MACHINE_CODE" }`
+  * Standard error codes: `UNAUTHORIZED`, `INVALID_OTP`, `OTP_EXPIRED`, `ACCOUNT_LOCKED`, `ACCOUNT_INACTIVE`, `CASE_NOT_FOUND`
 
-### 3.1 App Version Guard
-* `GET /app/version-check?platform={ios|android}&version={1.0.0}`
+### 3.1 App Version Guard & Universal Links
+* Version Check: `GET /app/version-check?platform={ios|android}&version={1.0.0}`
   * Response: `{ ok: true, min_required_version: "1.0.0", force_update: false, store_url: "..." }`
+* iOS Universal Links: `GET /.well-known/apple-app-site-association`
+* Android App Links: `GET /.well-known/assetlinks.json`
 
 ### 3.2 Passwordless WhatsApp Authentication
 * **Patient Login:**
   * Send OTP: `POST /auth/send-otp` `{ phone: "+966500000000" }`
-  * Verify OTP: `POST /auth/verify-otp` `{ phone: "+966500000000", otp: "123456" }` ➔ Returns `{ token, patient }`
+  * Verify OTP: `POST /auth/verify-otp` `{ phone: "+966500000000", otp: "123456" }` ➔ Returns `{ ok: true, registered: true, token, user }`
 * **Hospital Staff Login:**
   * Send OTP: `POST /auth/staff/otp/send` `{ phone: "+966500000000" }`
-  * Verify OTP: `POST /auth/staff/otp/verify` `{ phone: "+966500000000", otp: "123456" }` ➔ Returns `{ token, staff, hospital_id }`
-  * Dual-Role Chooser (if phone is both staff & patient): `POST /auth/choose-role` `{ challenge, role: "staff"|"patient" }`
+  * Verify OTP: `POST /auth/staff/otp/verify` `{ phone: "+966500000000", otp: "123456" }` ➔ Returns `{ ok: true, token, user }`
+  * Dual-Role Chooser (if phone is both staff & patient): `POST /auth/choose-role` `{ challenge, role: "staff"|"patient" }` ➔ Returns `{ ok: true, token, user }`
 
 ### 3.3 Patient Case Management & Intake
 * List Cases: `GET /cases`
 * Case Details: `GET /cases/:id`
 * Submit Case Intake: `POST /cases` (Multipart form-data: reason, specialty, history, scans)
-* Download Medical Report PDF: `GET /cases/:id/report/pdf`
+* Download Medical Report PDF (Inline preview supported): `GET /cases/:id/report/pdf?inline=true`
 
 ### 3.4 Mobile Live Queue Tracker (`/p/:code`)
 * Snapshot: `GET /public/case/:code`
-* Real-Time Stream: `GET /public/case/:code/stream` (SSE EventSource)
+* Real-Time Stream: `GET /public/case/:code/stream` (SSE EventSource with 20s heartbeat ping)
   * When `arrival_status == 'in_clinic'` or `just_called == true` ➔ Trigger native vibration + alert.
-* Download Clinic Visit Summary PDF: `GET /public/case/:code/report/pdf`
+* Download Clinic Visit Summary PDF (Inline preview supported): `GET /public/case/:code/report/pdf?inline=true`
 
 ### 3.5 Hospital Staff Operations (Scoped to Tenant Hospital)
 * Reception Queue: `GET /hospital/reception/queue`
@@ -88,7 +97,13 @@ My Cases & Intake    Live Queue   Reception Desk     Doctor Desk
 * Update Arrival Status (Call Patient): `POST /hospital/reception/arrival` `{ case_id, arrival_status: "in_clinic" }`
 * Doctor Save Consultation & Opinion: `POST /hospital/cases/:id/opinion` `{ doctor_opinion, status: "completed" }`
 * Order Lab Test: `POST /hospital/lab/tests` `{ hospital_case_id, test_catalogue_id, priority }`
-* Download Clinic Visit Summary PDF: `GET /hospital/cases/:id/report/pdf`
+* Download Clinic Visit Summary PDF: `GET /hospital/cases/:id/report/pdf?inline=true`
+
+### 3.6 Web-to-Native Bridge Protocol (for Hybrid Screens)
+For screens embedded in a native `WKWebView` (iOS) or `WebView` (Android), the frontend exposes `NativeBridge` in `client/src/lib/nativeBridge.js`:
+* **iOS Handler:** `window.webkit.messageHandlers.aloBridge.postMessage({ action, ...payload })`
+* **Android Interface:** `window.AndroidBridge.postMessage(JSON.stringify({ action, ...payload }))`
+* **Actions:** `haptic`, `scan_request`, `ticket_called`, `logout`
 
 ---
 

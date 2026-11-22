@@ -20,14 +20,22 @@ export const STAFF_TTL = 8 * 3600_000;     // F-AUTH-03: 8 hours
 
 export function issueSession(res, { sub, role, kind, hospital_id = null }, maxAgeMs) {
   const token = jwt.sign({ sub, role, kind, hospital_id }, SECRET, { expiresIn: Math.floor(maxAgeMs / 1000) });
-  res.cookie(COOKIE, token, {
-    httpOnly: true, sameSite: 'lax', path: '/',
-    secure: process.env.NODE_ENV === 'production', maxAge: maxAgeMs
-  });
+  if (res && typeof res.cookie === 'function') {
+    res.cookie(COOKIE, token, {
+      httpOnly: true, sameSite: 'lax', path: '/',
+      secure: process.env.NODE_ENV === 'production', maxAge: maxAgeMs
+    });
+  }
+  return token;
 }
 
 export function resolveSession(req, res, next) {
-  const token = req.cookies?.[COOKIE];
+  let token = req.cookies?.[COOKIE];
+  const authHeader = req.headers?.authorization;
+  if (!token && authHeader?.startsWith('Bearer ')) {
+    token = authHeader.slice(7).trim();
+  }
+
   if (token) {
     try {
       const payload = jwt.verify(token, SECRET);
@@ -38,26 +46,28 @@ export function resolveSession(req, res, next) {
         hospital_id: payload.hospital_id || null
       };
       const maxAge = req.session.kind === 'patient' ? PATIENT_TTL : STAFF_TTL;
-      issueSession(res, req.session, maxAge); // refreshed on activity
+      if (req.cookies?.[COOKIE]) {
+        issueSession(res, req.session, maxAge); // refreshed on activity for cookie sessions
+      }
     } catch { /* expired/invalid -> anonymous */ }
   }
   next();
 }
 
 export function requireAuth(req, res, next) {
-  if (!req.session) return res.status(401).json({ error: 'Not authenticated' });
+  if (!req.session) return res.status(401).json({ error: 'Not authenticated', code: 'UNAUTHORIZED' });
   next();
 }
 
 export function requireRole(...roles) {
   return async (req, res, next) => {
     try {
-      if (!req.session) return res.status(401).json({ error: 'Not authenticated' });
-      if (!roles.includes(req.session.role)) return res.status(403).json({ error: 'Forbidden' });
+      if (!req.session) return res.status(401).json({ error: 'Not authenticated', code: 'UNAUTHORIZED' });
+      if (!roles.includes(req.session.role)) return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
       if (req.session.kind === 'staff') {
         const { data: s } = await db.from('staff_users').select().eq('id', req.session.sub).maybeSingle();
         // Part 8.1: deactivated mid-session -> 401 on next call.
-        if (!s?.is_active) return res.status(401).json({ error: 'account_inactive' });
+        if (!s?.is_active) return res.status(401).json({ error: 'account_inactive', code: 'ACCOUNT_INACTIVE' });
       }
       next();
     } catch (e) { next(e); }
@@ -67,7 +77,7 @@ export function requireRole(...roles) {
 export async function loadCase(req, res, next) {
   try {
     const { data: c } = await db.from('cases').select().eq('id', req.params.id).maybeSingle();
-    if (!c) return res.status(404).json({ error: 'Case not found' });
+    if (!c) return res.status(404).json({ error: 'Case not found', code: 'CASE_NOT_FOUND' });
     req.case = c;
     next();
   } catch (e) { next(e); }
@@ -87,7 +97,7 @@ export async function requireCaseAccess(req, res, next) {
     }
     if (!ok) {
       await audit(req, 'CASE_ACCESS_DENIED', { resourceType: 'case', resourceId: c.id });
-      return res.status(403).json({ error: 'Forbidden' });
+      return res.status(403).json({ error: 'Forbidden', code: 'CASE_ACCESS_DENIED' });
     }
     next();
   } catch (e) { next(e); }

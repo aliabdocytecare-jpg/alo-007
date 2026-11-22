@@ -4,12 +4,11 @@ import { useParams } from 'react-router-dom';
 import { api, errMsg } from '../../lib/api';
 import { useI18n } from '../../lib/i18n';
 import { Msg } from '../../components/ui';
+import { NativeBridge } from '../../lib/nativeBridge';
 
-function alertPatient() {
+function alertPatient(code) {
   try {
-    if (navigator.vibrate) {
-      navigator.vibrate([250, 100, 250, 100, 400]);
-    }
+    NativeBridge.notifyTicketCalled({ code, status: 'in_clinic' });
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (AudioCtx) {
       const ctx = new AudioCtx();
@@ -41,7 +40,7 @@ export default function PatientTracker() {
     setData(fresh);
     const newStatus = fresh.case?.arrival_status;
     if ((fresh.just_called || (newStatus === 'in_clinic' && prevStatusRef.current !== 'in_clinic')) && prevStatusRef.current !== null) {
-      alertPatient();
+      alertPatient(code);
     }
     prevStatusRef.current = newStatus;
   };
