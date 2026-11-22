@@ -198,6 +198,7 @@ api.post('/hospital/patients', requireHospitalMember, requireHospitalRole('recep
 api.get('/hospital/cases', requireHospitalMember, hospCase.listHospitalCases);
 api.post('/hospital/cases', requireHospitalMember, requireHospitalRole('reception', 'doctor', 'hospital_admin'), hospCase.createHospitalCase);
 api.get('/hospital/cases/:id', requireHospitalMember, hospCase.getHospitalCaseDetail);
+api.get('/hospital/cases/:id/report/pdf', requireHospitalMember, loadHospitalCase, hospCase.downloadClinicVisitPdf);
 api.post('/hospital/cases/:id/opinion', requireHospitalMember, requireHospitalRole('doctor', 'hospital_admin'), hospCase.saveDoctorOpinion);
 api.post('/hospital/cases/:id/documents', requireHospitalMember, hospCase.upload.single('file'), hospCase.uploadHospitalDocument);
 api.post('/hospital/cases/:id/intl-opinion', requireHospitalMember, requireHospitalRole('doctor', 'hospital_admin'), loadHospitalCase, bridge.requestIntlOpinion);
@@ -220,6 +221,8 @@ api.post('/hospital/pharmacy/medications/:id/dispense', requireHospitalMember, r
 api.get('/public/kiosk/:pin', publicHosp.getKioskConfig);
 api.post('/public/kiosk/:pin/checkin', publicHosp.kioskCheckin);
 api.get('/public/case/:code', publicHosp.getPublicCaseStatus);
+api.get('/public/case/:code/stream', publicHosp.streamPublicCaseStatus);
+api.get('/public/case/:code/report/pdf', reviewLimiter, publicHosp.downloadPublicClinicVisitPdf);
 api.get('/public/screen/:pin/waiting', publicHosp.getWaitingScreenFeed);
 api.get('/public/screen/:pin/waiting/stream', publicHosp.streamWaitingScreen);
 api.get('/public/reports-request/:token', reviewLimiter, caseEnhancements.getPublicReportsRequest);
@@ -232,6 +235,7 @@ api.get('/staff/intl-specialists', requireAuth, requireRole('coordinator', 'admi
 api.post('/staff/intl-specialists', requireRole('coordinator', 'admin'), requireALOStaff, bridge.createSpecialistDirectoryItem);
 
 api.get('/review/intl/:token', reviewLimiter, bridge.openIntlReview);
+api.get('/review/intl/:token/documents/:docId', reviewLimiter, bridge.reviewIntlDocument);
 api.post('/review/intl/:token/submit', reviewLimiter, bridge.submitIntlReview);
 
 // ---- Notifications (all roles) ----

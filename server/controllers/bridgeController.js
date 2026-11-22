@@ -613,3 +613,52 @@ export const createSpecialistDirectoryItem = ah(async (req, res) => {
 
   res.status(201).json({ ok: true, specialist: item });
 });
+
+/**
+ * GET /api/v1/review/intl/:token/documents/:docId
+ * Stream attached scan or lab report for international specialist review
+ */
+export const reviewIntlDocument = ah(async (req, res) => {
+  const { token, docId } = req.params;
+  if (!token || token.length !== 48) throw httpError(403, 'invalid');
+
+  const tokenH = hashToken(token);
+  const { data: opReq, error: reqErr } = await db
+    .from('international_opinion_requests')
+    .select('id, hospital_id, hospital_case_id, status, token_expires_at')
+    .eq('magic_token_hash', tokenH)
+    .maybeSingle();
+
+  if (reqErr || !opReq) throw httpError(403, 'invalid');
+  if (opReq.status === 'cancelled') throw httpError(403, 'revoked');
+  if (opReq.token_expires_at && new Date(opReq.token_expires_at).getTime() < Date.now()) {
+    throw httpError(403, 'expired');
+  }
+
+  // Fetch document ensuring it belongs to the hospital case
+  const { data: doc, error: docErr } = await db
+    .from('hospital_documents')
+    .select('*')
+    .eq('id', docId)
+    .eq('hospital_case_id', opReq.hospital_case_id)
+    .eq('is_deleted', false)
+    .maybeSingle();
+
+  if (docErr || !doc) throw httpError(404, 'Document not found');
+
+  const { data: fileData, error: dlErr } = await db.storage
+    .from('case-documents')
+    .download(doc.storage_path);
+
+  if (dlErr || !fileData) throw httpError(500, 'Could not retrieve scan file');
+
+  await audit(req, 'INTL_SCAN_VIEWED', {
+    resourceType: 'hospital_document',
+    resourceId: doc.id,
+    detail: { hospital_case_id: opReq.hospital_case_id, file_name: doc.file_name }
+  });
+
+  res.set('Content-Type', doc.file_type || 'application/octet-stream');
+  res.set('Content-Disposition', `inline; filename="${encodeURIComponent(doc.file_name)}"`);
+  res.send(Buffer.from(await fileData.arrayBuffer()));
+});

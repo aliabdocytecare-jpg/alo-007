@@ -52,6 +52,11 @@ export default function HospitalDashboard() {
   const [staffList, setStaffList] = useState([]);
   const [slotTemplates, setSlotTemplates] = useState([]);
 
+  // Search & Print Enhancements (DEC-063)
+  const [receptionSearch, setReceptionSearch] = useState('');
+  const [doctorSearch, setDoctorSearch] = useState('');
+  const [tubeLabelTest, setTubeLabelTest] = useState(null);
+
   const reloadData = async () => {
     setErr('');
     try {
@@ -222,6 +227,16 @@ export default function HospitalDashboard() {
     } catch (e) { setErr(errMsg(e)); }
   };
 
+  const matchesFilter = (item, query) => {
+    if (!query || !query.trim()) return true;
+    const q = query.trim().toLowerCase();
+    const name = (item.patient?.full_name || '').toLowerCase();
+    const mrn = (item.patient?.mrn || '').toLowerCase();
+    const num = (item.queue_number || '').toLowerCase();
+    const code = (item.checkin_code || '').toLowerCase();
+    return name.includes(q) || mrn.includes(q) || num.includes(q) || code.includes(q);
+  };
+
   return (
     <div className="wrap">
       <div className="row" style={{ justifyContent: 'space-between', borderBottom: '2px solid #000', paddingBottom: 10 }}>
@@ -279,11 +294,20 @@ export default function HospitalDashboard() {
           </section>
 
           <section className="box">
-            <h2>Today's Live Queue Board</h2>
-            <div className="cards" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2>Today's Live Queue Board</h2>
+              <input
+                type="text"
+                placeholder="🔍 Search patient, MRN, queue # or code..."
+                value={receptionSearch}
+                onChange={e => setReceptionSearch(e.target.value)}
+                style={{ maxWidth: 300 }}
+              />
+            </div>
+            <div className="cards" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 12 }}>
               <div className="card">
-                <h3>Scheduled ({queue.scheduled?.length || 0})</h3>
-                {queue.scheduled?.map(c => (
+                <h3>Scheduled ({(queue.scheduled || []).filter(c => matchesFilter(c, receptionSearch)).length})</h3>
+                {(queue.scheduled || []).filter(c => matchesFilter(c, receptionSearch)).map(c => (
                   <div key={c.id} style={{ borderBottom: '1px solid #ddd', padding: '6px 0' }}>
                     <strong>{c.patient?.full_name}</strong>
                     <div className="muted">{c.appointment_time || 'No time'} · Code: {c.checkin_code}</div>
@@ -293,8 +317,8 @@ export default function HospitalDashboard() {
               </div>
 
               <div className="card" style={{ background: '#f9f9f9' }}>
-                <h3>Arrived / Waiting ({queue.arrived?.length || 0})</h3>
-                {queue.arrived?.map(c => (
+                <h3>Arrived / Waiting ({(queue.arrived || []).filter(c => matchesFilter(c, receptionSearch)).length})</h3>
+                {(queue.arrived || []).filter(c => matchesFilter(c, receptionSearch)).map(c => (
                   <div key={c.id} style={{ borderBottom: '1px solid #ddd', padding: '6px 0' }}>
                     <span className="badge" style={{ fontSize: 16 }}>{c.queue_number}</span>
                     <div><strong>{c.patient?.full_name}</strong></div>
@@ -304,8 +328,8 @@ export default function HospitalDashboard() {
               </div>
 
               <div className="card" style={{ border: '2px solid #000' }}>
-                <h3>In Clinic ({queue.in_clinic?.length || 0})</h3>
-                {queue.in_clinic?.map(c => (
+                <h3>In Clinic ({(queue.in_clinic || []).filter(c => matchesFilter(c, receptionSearch)).length})</h3>
+                {(queue.in_clinic || []).filter(c => matchesFilter(c, receptionSearch)).map(c => (
                   <div key={c.id} style={{ borderBottom: '1px solid #ddd', padding: '6px 0' }}>
                     <span className="badge" style={{ background: '#000', color: '#fff' }}>{c.queue_number}</span>
                     <div><strong>{c.patient?.full_name}</strong></div>
@@ -315,8 +339,8 @@ export default function HospitalDashboard() {
               </div>
 
               <div className="card">
-                <h3>Done / Completed ({queue.done?.length || 0})</h3>
-                {queue.done?.map(c => (
+                <h3>Done / Completed ({(queue.done || []).filter(c => matchesFilter(c, receptionSearch)).length})</h3>
+                {(queue.done || []).filter(c => matchesFilter(c, receptionSearch)).map(c => (
                   <div key={c.id} style={{ borderBottom: '1px solid #ddd', padding: '6px 0', opacity: 0.6 }}>
                     <span>{c.queue_number} · {c.patient?.full_name}</span>
                   </div>
@@ -332,26 +356,37 @@ export default function HospitalDashboard() {
         <div>
           {!activeCase ? (
             <section className="box">
-              <h2>Waiting Patient Queue</h2>
-              {!(queue.arrived?.length || queue.in_clinic?.length) && <p className="muted">No patients currently waiting.</p>}
-              <table>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2>Waiting Patient Queue</h2>
+                <input
+                  type="text"
+                  placeholder="🔍 Search patient name, MRN or queue #..."
+                  value={doctorSearch}
+                  onChange={e => setDoctorSearch(e.target.value)}
+                  style={{ maxWidth: 300 }}
+                />
+              </div>
+              {!(queue.arrived?.length || queue.in_clinic?.length) && <p className="muted" style={{ marginTop: 12 }}>No patients currently waiting.</p>}
+              <table style={{ marginTop: 12 }}>
                 <thead>
                   <tr><th>Queue #</th><th>Patient Name</th><th>MRN</th><th>Specialty</th><th>Action</th></tr>
                 </thead>
                 <tbody>
-                  {[...(queue.in_clinic || []), ...(queue.arrived || [])].map(c => (
-                    <tr key={c.id}>
-                      <td><strong>{c.queue_number}</strong></td>
-                      <td>{c.patient?.full_name}</td>
-                      <td>{c.patient?.mrn}</td>
-                      <td>{c.requested_specialty || 'General'}</td>
-                      <td>
-                        <button onClick={() => callPatient(c.id)}>
-                          {c.arrival_status === 'in_clinic' ? 'Open Case' : 'Call into Clinic'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {[...(queue.in_clinic || []), ...(queue.arrived || [])]
+                    .filter(c => matchesFilter(c, doctorSearch))
+                    .map(c => (
+                      <tr key={c.id}>
+                        <td><strong>{c.queue_number}</strong></td>
+                        <td>{c.patient?.full_name}</td>
+                        <td>{c.patient?.mrn}</td>
+                        <td>{c.requested_specialty || 'General'}</td>
+                        <td>
+                          <button onClick={() => callPatient(c.id)}>
+                            {c.arrival_status === 'in_clinic' ? 'Open Case' : 'Call into Clinic'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </section>
@@ -373,9 +408,17 @@ export default function HospitalDashboard() {
                   />
                 </Field>
 
-                <div className="row" style={{ marginTop: 12 }}>
+                <div className="row" style={{ marginTop: 12, gap: 10 }}>
                   <button onClick={saveOpinion} disabled={!doctorOpinion.trim()}>Complete Consultation & Save</button>
                   <button onClick={() => setShowIntlModal(true)}>🌐 Request Global Second Opinion (Bridge 2)</button>
+                  <a
+                    className="btn"
+                    href={`/api/v1/hospital/cases/${activeCase.id}/report/pdf`}
+                    download={`Clinic_Visit_${activeCase.case_number}.pdf`}
+                    style={{ textDecoration: 'none' }}
+                  >
+                    📄 Download Visit Summary (PDF)
+                  </a>
                 </div>
               </section>
 
@@ -465,9 +508,14 @@ export default function HospitalDashboard() {
                       {t.critical_result && <span className="badge" style={{ border: '2px solid red' }}>CRITICAL</span>}
                     </td>
                     <td>
-                      <button onClick={() => { setSelectedLabTest(t); setLabResultData(JSON.stringify(t.results || {}, null, 2)); }}>
-                        {t.status === 'resulted' ? 'Amend Result' : 'Enter Result'}
-                      </button>
+                      <div className="row" style={{ gap: 6 }}>
+                        <button onClick={() => { setSelectedLabTest(t); setLabResultData(JSON.stringify(t.results || {}, null, 2)); }}>
+                          {t.status === 'resulted' ? 'Amend Result' : 'Enter Result'}
+                        </button>
+                        <button onClick={() => setTubeLabelTest(t)}>
+                          🏷️ Tube Label
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -573,6 +621,37 @@ export default function HospitalDashboard() {
               </tbody>
             </table>
           </section>
+        </div>
+      )}
+
+      {/* Tube Barcode Label Printable Modal (DEC-063) */}
+      {tubeLabelTest && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+          <div className="box" style={{ background: '#fff', maxWidth: 420, width: '90%', textAlign: 'center', padding: 24 }}>
+            <h3>Specimen Tube Label</h3>
+            <p className="muted" style={{ fontSize: 13 }}>Standard 50mm x 25mm Thermal Label Preview</p>
+            
+            <div style={{ border: '2px dashed #000', padding: 16, margin: '16px auto', maxWidth: 300, background: '#fff' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1 }}>{session?.tenant?.name || 'HOSPITAL CLINIC'}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, margin: '4px 0' }}>{tubeLabelTest.test_name}</div>
+              {tubeLabelTest.barcode_svg ? (
+                <div dangerouslySetInnerHTML={{ __html: tubeLabelTest.barcode_svg }} style={{ margin: '8px 0', display: 'flex', justifyContent: 'center' }} />
+              ) : (
+                <div style={{ fontFamily: 'monospace', fontSize: 18, fontWeight: 900, letterSpacing: 2, margin: '8px 0' }}>
+                  {tubeLabelTest.specimen_id}
+                </div>
+              )}
+              <div style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700 }}>{tubeLabelTest.specimen_id}</div>
+              <div className="muted" style={{ fontSize: 10, marginTop: 4 }}>
+                {tubeLabelTest.specimen_type || 'Blood'} · {new Date(tubeLabelTest.created_at || Date.now()).toLocaleDateString('en-GB')}
+              </div>
+            </div>
+
+            <div className="row" style={{ justifyContent: 'center', gap: 10, marginTop: 16 }}>
+              <button className="btn" onClick={() => window.print()}>Print Label</button>
+              <button onClick={() => setTubeLabelTest(null)}>Close</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

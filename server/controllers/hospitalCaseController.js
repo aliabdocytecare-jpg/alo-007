@@ -4,6 +4,7 @@ import multer from 'multer';
 import { db } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
 import { sanitizeHospitalCaseForRole } from '../lib/scope.js';
+import { buildHospitalClinicVisitPdf } from '../services/pdfReportService.js';
 
 export const upload = multer({
   storage: multer.memoryStorage(),
@@ -410,4 +411,32 @@ export const uploadHospitalDocument = ah(async (req, res) => {
   if (error) throw httpError(500, error.message);
 
   res.status(201).json({ ok: true, document: doc });
+});
+
+/**
+ * GET /api/v1/hospital/cases/:id/report/pdf
+ * Generates and downloads the official clinic visit summary PDF
+ */
+export const downloadClinicVisitPdf = ah(async (req, res) => {
+  const c = req.hospitalCase;
+
+  const [patRes, docRes, labRes, medRes] = await Promise.all([
+    db.from('hospital_patients').select('*').eq('id', c.hospital_patient_id).maybeSingle(),
+    c.assigned_doctor_id ? db.from('staff_users').select('*').eq('id', c.assigned_doctor_id).maybeSingle() : { data: null },
+    db.from('hospital_lab_tests').select('*').eq('hospital_case_id', c.id).order('created_at'),
+    db.from('hospital_medications').select('*').eq('hospital_case_id', c.id).order('created_at')
+  ]);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Clinic_Visit_${c.case_number || 'case'}.pdf"`);
+
+  buildHospitalClinicVisitPdf({
+    hospitalCaseData: c,
+    hospitalData: req.tenant,
+    patientData: patRes.data || {},
+    doctorData: docRes.data || {},
+    labTests: labRes.data || [],
+    medications: medRes.data || [],
+    streamRes: res
+  });
 });

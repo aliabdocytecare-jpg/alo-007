@@ -2,6 +2,7 @@
 import { db } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
 import { queueEvents, emitQueueUpdate } from '../services/realtimeService.js';
+import { buildHospitalClinicVisitPdf } from '../services/pdfReportService.js';
 
 /**
  * Helper to extract first name for patient privacy
@@ -304,5 +305,127 @@ export const streamWaitingScreen = ah(async (req, res) => {
   req.on('close', () => {
     clearInterval(heartbeat);
     queueEvents.off('queue_update', onQueueUpdate);
+  });
+});
+
+/**
+ * GET /api/v1/public/case/:code/report/pdf
+ * Generates and downloads the official clinic visit summary PDF for patient
+ */
+export const downloadPublicClinicVisitPdf = ah(async (req, res) => {
+  const { code } = req.params;
+  if (!code || code.trim().length !== 6) throw httpError(400, 'Invalid check-in code');
+
+  const { data: c, error: caseErr } = await db
+    .from('hospital_cases')
+    .select('*')
+    .eq('checkin_code', code.trim().toUpperCase())
+    .maybeSingle();
+
+  if (caseErr || !c) throw httpError(404, 'Clinic case not found');
+
+  const [hospRes, patRes, docRes, labRes, medRes] = await Promise.all([
+    db.from('hospitals').select('*').eq('id', c.hospital_id).maybeSingle(),
+    db.from('hospital_patients').select('*').eq('id', c.hospital_patient_id).maybeSingle(),
+    c.assigned_doctor_id ? db.from('staff_users').select('*').eq('id', c.assigned_doctor_id).maybeSingle() : { data: null },
+    db.from('hospital_lab_tests').select('*').eq('hospital_case_id', c.id).order('created_at'),
+    db.from('hospital_medications').select('*').eq('hospital_case_id', c.id).order('created_at')
+  ]);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Clinic_Visit_${c.case_number || 'case'}.pdf"`);
+
+  buildHospitalClinicVisitPdf({
+    hospitalCaseData: c,
+    hospitalData: hospRes.data || {},
+    patientData: patRes.data || {},
+    doctorData: docRes.data || {},
+    labTests: labRes.data || [],
+    medications: medRes.data || [],
+    streamRes: res
+  });
+});
+
+/**
+ * GET /api/v1/public/case/:code/stream
+ * Real-time SSE stream for patient mobile queue tracker
+ */
+export const streamPublicCaseStatus = ah(async (req, res) => {
+  const { code } = req.params;
+  if (!code || code.trim().length !== 6) throw httpError(400, 'Invalid check-in code');
+
+  const upperCode = code.trim().toUpperCase();
+
+  const fetchStatus = async () => {
+    const { data: c } = await db
+      .from('hospital_cases')
+      .select('id, case_number, checkin_code, queue_number, status, arrival_status, appointment_date, appointment_time, hospital_id, hospital_patient_id, assigned_doctor_id, doctor_opinion')
+      .eq('checkin_code', upperCode)
+      .maybeSingle();
+
+    if (!c) return null;
+
+    const [hospRes, docRes] = await Promise.all([
+      db.from('hospitals').select('id, name, city').eq('id', c.hospital_id).maybeSingle(),
+      c.assigned_doctor_id ? db.from('staff_users').select('full_name, specialty').eq('id', c.assigned_doctor_id).maybeSingle() : { data: null }
+    ]);
+
+    let aheadCount = 0;
+    if (c.queue_number && c.arrival_status === 'arrived') {
+      const { count } = await db
+        .from('hospital_cases')
+        .select('*', { count: 'exact', head: true })
+        .eq('hospital_id', c.hospital_id)
+        .eq('arrival_status', 'arrived')
+        .lt('queue_number', c.queue_number);
+      aheadCount = count || 0;
+    }
+
+    return {
+      ok: true,
+      case: c,
+      hospital: hospRes.data || {},
+      doctor: docRes.data || {},
+      queue: {
+        ahead_count: aheadCount,
+        estimated_wait_min: aheadCount * 15
+      }
+    };
+  };
+
+  const initial = await fetchStatus();
+  if (!initial) throw httpError(404, 'Case not found');
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+
+  res.write(`data: ${JSON.stringify(initial)}\n\n`);
+
+  const onUpdate = async (detail) => {
+    if (detail.hospitalId !== initial.case.hospital_id) return;
+    try {
+      const fresh = await fetchStatus();
+      if (fresh) {
+        if (detail.just_called && detail.just_called === fresh.case.queue_number) {
+          fresh.just_called = true;
+        }
+        res.write(`data: ${JSON.stringify(fresh)}\n\n`);
+      }
+    } catch (e) {}
+  };
+
+  queueEvents.on('queue_update', onUpdate);
+
+  const heartbeat = setInterval(() => {
+    res.write(': ping\n\n');
+  }, 20_000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    queueEvents.off('queue_update', onUpdate);
   });
 });

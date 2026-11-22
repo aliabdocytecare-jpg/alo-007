@@ -435,7 +435,10 @@ node server/scripts/test-phase5.mjs
 # 6. Real-Time Queue Stream (SSE & Chime) & Medical Report PDF Generation
 NO_LISTEN=1 node --env-file=server/.env server/scripts/test-phase7-enhancements.mjs
 
-# 7. Frontend Production Compilation (Vite build)
+# 7. Bridge 2 Scans, Clinic Visit PDF & Mobile Tracker Alerts (DEC-063)
+NO_LISTEN=1 node --env-file=server/.env server/scripts/test-phase8-gaps.mjs
+
+# 8. Frontend Production Compilation (Vite build)
 npm --prefix client run build
 ```
 

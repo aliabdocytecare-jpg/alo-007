@@ -444,6 +444,29 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Rationale:** Waiting room screens require immediate, sub-second visual and audible feedback when a ticket is called. Patients and clinicians require formal, downloadable PDF medical reports for clinical records and pharmacy presentation.
 - **Reference:** DEC-056, DEC-058, DEC-059, `server/services/realtimeService.js`, `server/services/pdfReportService.js`, `server/controllers/publicHospitalController.js`, `server/scripts/test-phase7-enhancements.mjs`.
 
+## DEC-063 — Implementation of Six High-Impact Workflow Enhancements across Bridge 2, Hospital Day-Clinic Engine, Kiosk, and Patient Tracker
+- **Decision:** Implemented six concrete workflow enhancements addressing identified clinical, privacy, and usability gaps:
+  1. Bridge 2 Specialist Scan Preview:
+     - Implemented `reviewIntlDocument` in `server/controllers/bridgeController.js` and mounted `GET /api/v1/review/intl/:token/documents/:docId`.
+     - Validates token hash, enforces document scoping (`hospital_case_id`), and streams scans from Supabase storage (`case-documents`).
+  2. Day-Clinic Visit Summary PDF Generation:
+     - Implemented `buildHospitalClinicVisitPdf` in `server/services/pdfReportService.js`.
+     - Mounted staff endpoint `GET /api/v1/hospital/cases/:id/report/pdf` (`server/controllers/hospitalCaseController.js`) and public check-in code endpoint `GET /api/v1/public/case/:code/report/pdf` (`server/controllers/publicHospitalController.js`).
+     - Added "Download Visit Summary (PDF)" actions in `client/src/pages/hospital/HospitalDashboard.jsx` (Doctor Desk) and `client/src/pages/public/PatientTracker.jsx`.
+  3. Mobile Patient Tracker Live SSE Stream & Alert:
+     - Implemented `streamPublicCaseStatus` (`GET /api/v1/public/case/:code/stream`) in `server/controllers/publicHospitalController.js`.
+     - Upgraded `client/src/pages/public/PatientTracker.jsx` with native `EventSource` connection, live badge, device vibration (`navigator.vibrate`), and audio chime alert when called into clinic (`in_clinic`).
+  4. Printable Specimen Tube Barcode Label:
+     - Added a "Print Tube Label" action in `HospitalDashboard.jsx` (Lab tab) that renders a 50mm x 25mm printable thermal label modal featuring the Code 128B SVG barcode, Specimen ID (`SPEC-...`), Patient MRN, and Test Name.
+  5. Unattended Kiosk Auto-Reset Timeout:
+     - Implemented a 15-second countdown auto-reset in `client/src/pages/public/Kiosk.jsx` after check-in slip issuance to guarantee patient privacy in hospital lobbies.
+  6. Instant Filter / Search on Reception & Doctor Desks:
+     - Added client-side real-time filter inputs in `HospitalDashboard.jsx` filtering clinic queues by Patient Name, MRN, Queue Number, or Check-in Code.
+  - Verification: Automated suite `server/scripts/test-phase8-gaps.mjs` executed 100% passing checks against live Supabase; production client compiled cleanly via `vite build` in 791ms.
+- **Rationale:** Ensures international specialists can inspect diagnostic imaging, physical day-clinic patients receive downloadable medical visit sheets, waiting patients receive immediate mobile call alerts, phlebotomists can print collection tube labels, and lobby kiosks preserve patient privacy.
+- **Reference:** DEC-056 through DEC-062, `server/controllers/bridgeController.js`, `server/controllers/hospitalCaseController.js`, `server/controllers/publicHospitalController.js`, `server/services/pdfReportService.js`, `server/scripts/test-phase8-gaps.mjs`.
+
+
 
 
 

@@ -13,6 +13,25 @@ export default function Kiosk() {
   const [slip, setSlip] = useState(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resetTimer, setResetTimer] = useState(15);
+
+  // Auto-reset slip screen after 15s to protect patient privacy for the next person in line
+  useEffect(() => {
+    if (!slip) {
+      setResetTimer(15);
+      return;
+    }
+    const iv = setInterval(() => {
+      setResetTimer(prev => {
+        if (prev <= 1) {
+          setSlip(null);
+          return 15;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [slip]);
 
   useEffect(() => {
     if (pin && pin.length >= 4) {
@@ -109,9 +128,12 @@ export default function Kiosk() {
           <p style={{ marginTop: 20 }}>
             <span className="badge">Code: {slip.checkin_code}</span>
           </p>
-          <div className="row" style={{ justifyContent: 'center', marginTop: 24 }}>
+          <p className="muted" style={{ fontSize: 13, marginTop: 16 }}>
+            Screen will automatically reset for the next patient in <strong>{resetTimer}s</strong>
+          </p>
+          <div className="row" style={{ justifyContent: 'center', marginTop: 16 }}>
             <button onClick={() => window.print()} className="btn">{t('print')}</button>
-            <button onClick={() => setSlip(null)}>{t('back')}</button>
+            <button onClick={() => setSlip(null)}>Finish / Done</button>
           </div>
         </section>
       </div>
