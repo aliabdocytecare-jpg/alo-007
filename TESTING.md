@@ -24,8 +24,8 @@ any more (DEC-054): your laptop runs the same Express code against the same live
 project as https://alodoc.online.
 
 ```bash
-git clone https://github.com/kathirvelmurugan/2026NOV20-ALO-DOC.git
-cd 2026NOV20-ALO-DOC
+git clone https://github.com/aliabdocytecare-jpg/alo-007.git
+cd alo-007
 
 # server/.env — ask the owner for these values (never commit them):
 #   SUPABASE_URL=https://<project-ref>.supabase.co
@@ -64,7 +64,7 @@ one and a staff member in the other at the same time.
    | Role | Email | Password |
    |------|-------|----------|
    | Admin (ALO Super Admin) | `aliabdocytecare@gmail.com` | owner-held, never documented |
-   | Admin | `kathirvel.murugan@gmail.com` | owner-held, never documented |
+   | Admin | `adrian.lewis@alodoc.sa` | owner-held, never documented |
 
    Staff sign-in: on the login page click **"Staff sign-in"**, then email + password.
    Passwords are never written into this repo — ask the owner, or have an admin create your
@@ -340,7 +340,107 @@ Sign in as `admin@alodoc.com` → top nav **Admin**.
 
 ---
 
-## 4. The robot tests are retired (DEC-054)
+### Flow 12 — Hospital Day-Clinic Engine ✅
+**Stories:** DEC-056, DEC-057, DEC-058. Multi-tenant clinic operations, kiosk, queue, doctor desk, lab & pharmacy.
+
+**Steps**
+1. **Hospital Staff Sign-In:** On `/login`, click "Hospital Clinic Staff" tab. Enter staff WhatsApp phone number (e.g. `+966500000001`), verify OTP, and access `/hospital/dashboard`.
+2. **Kiosk Setup & Pairing:** Open `/kiosk` on tablet. Enter 6-digit hospital kiosk PIN (from `hospitals.kiosk_pin`) → pairs device and shows check-in keypad.
+3. **Patient Self Check-In:** Enter 6-character check-in code (e.g. `K9X2M4`) or national ID/MRN → receives daily queue number slip (`A-001`) with estimated wait time (`~15 min`).
+4. **Waiting Room Display:** Open `/screen/waiting` on waiting room TV monitor → displays live Riyadh clock, "Now Calling" board (`A-001 -> Clinic 3`), and waiting queue.
+5. **Doctor Consultation Desk:** On `/hospital/dashboard` (Doctor tab), call patient `A-001` → status updates to `in_clinic`, chime triggers on waiting screen. Record clinical notes, diagnosis, and follow-up plan.
+6. **Specimen Tube Barcode & Lab Order:** Order lab tests from catalogue (e.g. CBC, Lipid Profile). System generates `SPEC-<HOSP>-<HEX>` with pure-JS Code 128B SVG barcode for specimen tube labeling.
+7. **Lab Workbench:** In Lab tab, enter test results with normal/abnormal/critical flags. If correcting an error, enter rationale → previous values are immutably archived in `previous_versions` jsonb history.
+8. **Pharmacy Dispensing:** In Pharmacy tab, view prescribed medications from consultation. Click "Dispense" → records pharmacist ID, timestamp, and transitions case to `completed`.
+
+**Expect**
+- [ ] Multi-tenant isolation: Hospital A staff cannot query Hospital B records (returns 404).
+- [ ] Barcode SVG renders crisp Code 128B stripes scannable by physical barcode wands.
+- [ ] Lab amendments preserve complete audit trail with timestamps and reasons.
+
+---
+
+### Flow 13 — Bridge 1: Online Intake ➔ Saudi Hospital Referral ✅
+**Stories:** DEC-056, DEC-060. Seamless transition from online intake to physical day-clinic consultation.
+
+**Steps**
+1. Patient completes online intake on `/intake`.
+2. ALO Nurse reviews intake on `/staff/cases/:id` and approves bilingual AI summary.
+3. In case actions, click **"Refer to Saudi Hospital Clinic"**.
+4. Select partner hospital (e.g. King Fahad Specialist Hospital) and choose an available consultation slot from the live slot selector.
+5. Click **"Confirm & Book Clinic Appointment"**.
+
+**Expect**
+- [ ] **Single Atomic Transaction:** Slot status changes from `free` to `booked` in `hospital_slots` (database constraint rejects double-booking).
+- [ ] Clinic case created in `hospital_cases` with sequential daily case number (`C-0001`) and 6-character check-in code.
+- [ ] Remote case timeline records `HOSPITAL_REFERRED` with handoff payload.
+- [ ] Patient receives WhatsApp confirmation with clinic address, date/time, and 6-char check-in code linking to `/p/:code`.
+
+---
+
+### Flow 14 — Bridge 2: Saudi Hospital Doctor ➔ International Second Opinion ✅
+**Stories:** DEC-056, DEC-060. Clinic doctor requests global specialist second opinion with patient consent.
+
+**Steps**
+1. On `/hospital/dashboard`, Saudi clinic doctor opens an active clinic case.
+2. Under "Second Opinion", check **"Patient Consent Confirmed"**, enter patient consenting name and clinical question (e.g. "Evaluate surgical margins and adjuvant protocol").
+3. Submit request → enters ALO Coordinator queue on `/staff/intl-opinions`.
+4. Coordinator reviews request, selects an international specialist from curated directory (e.g. MD Anderson, Mayo Clinic, Charité), and clicks **"Dispatch"**.
+5. Specialist opens secure 48-char token link `/review/intl/:token`.
+6. Specialist reviews clinical question and attached scans (privacy-filtered: zero internal hospital notes or patient contact info exposed), selects decision chips, types opinion, and submits.
+
+**Expect**
+- [ ] Specialist token revoked immediately upon submission (single-use).
+- [ ] Opinion text automatically appends to the Saudi patient's chart timeline (`hospital_case_timeline`).
+- [ ] Saudi clinic doctor receives in-app alert that international opinion is attached to patient chart.
+
+---
+
+### Flow 15 — Case Portal Enhancements: AI Summary, Checklist & Multi-Round Reviews ✅
+**Stories:** DEC-056, DEC-059. Advanced coordinator tools and mobile specialist review pipeline.
+
+**Steps**
+1. **Bilingual AI Summary:** Coordinator opens remote case → clicks "Generate AI Summary". System produces structured bilingual schema (presentation, findings, questions, red flags) in English and Arabic. Coordinator edits and clicks "Approve".
+2. **Itemized Reports Checklist:** Coordinator clicks "Request Missing Documents", adds required items (e.g. "Recent Pelvic MRI DICOM", "Histopathology Report from Biopsy"). Patient receives WhatsApp link to `/upload-reports/:token`.
+3. **Patient Fulfillment:** Patient uploads files against specific checklist items → case returns to `INITIAL_REVIEW` when fulfilled.
+4. **Multi-Round Specialist Reviews:** Coordinator dispatches round 2 review. System captures immutable `case_snapshot` for "Then vs. Now" longitudinal diffing.
+5. **Specialist Mobile Dictation:** Specialist on `/review/:token` records voice dictation note using HTML5 audio recorder, chooses Decision Chips (Agreement, Path, Urgency), fills 4-box opinion, and submits. Audio is saved to Supabase storage `case-documents/voice-notes/`.
+6. **3-Step Final Report Synthesis:**
+   - Step 1: Coordinator compiles bilingual report (`final_report_en`, `final_report_ar`).
+   - Step 2: Coordinator verifies 4-point Clinical Safety Checklist.
+   - Step 3: Releasing report sets `final_report_published = true`, transitions case to `COMPLETED`, and alerts patient.
+
+---
+
+## 4. Automated Verification Test Suites
+
+In addition to manual testing, four comprehensive automated verification scripts validate the new database constraints, multi-tenant boundaries, and native bridge transactions against the live Supabase database without creating un-scrubbed mock data:
+
+```bash
+# 1. Environment & Database Preflight (13 checks)
+cd server && npm run preflight
+
+# 2. Phase 2: Tenancy Scoping & WhatsApp OTP Staff Auth (12 checks)
+node server/scripts/test-phase2.mjs
+
+# 3. Phase 3: Hospital Day-Clinic Engine & Barcodes (19 checks)
+node server/scripts/test-phase3.mjs
+
+# 4. Phase 4: Case Portal Enhancements & Multi-Round Reviews (17 checks)
+node server/scripts/test-phase4.mjs
+
+# 5. Phase 5: Bridge 1 & Bridge 2 Native Transactions (17 checks)
+node server/scripts/test-phase5.mjs
+
+# 6. Frontend Production Compilation (Vite build)
+npm --prefix client run build
+```
+
+*Note: All test scripts clean up their temporary test rows (`TEST — …`) upon completion, ensuring zero database pollution.*
+
+---
+
+## 5. The legacy robot tests are retired (DEC-054)
 
 Both automated suites depended on the world we just removed: mock OTP `123456`, demo staff
 accounts, and a disposable local database. They also **create patients and cases**, which would
@@ -361,7 +461,7 @@ they must be re-pointed at a disposable database with real seeded staff and run 
 
 ---
 
-## 5. Known limitations — please DON'T report these as bugs 🙏
+## 6. Known limitations — please DON'T report these as bugs 🙏
 
 These are deliberate, documented decisions (see `decisions.md`):
 
@@ -381,9 +481,9 @@ If you find something **outside** this list — that's a real gap. Tell us!
 
 ---
 
-## 6. How to report a gap (30 seconds)
+## 7. How to report a gap (30 seconds)
 
-Open a GitHub Issue: https://github.com/kathirvelmurugan/2026NOV20-ALO-DOC/issues → **New issue**.
+Open a GitHub Issue: https://github.com/aliabdocytecare-jpg/alo-007/issues → **New issue**.
 
 ```
 Flow / Story:   e.g. Flow 4 / US-INT-002
