@@ -327,10 +327,256 @@ function WhatsAppTab() {
   );
 }
 
+function HospitalsTab() {
+  const { t } = useI18n();
+  const { data: hospData, err: hospErr, reload: reloadHosps } = useAsync(() => api.get('/admin/hospitals').then(r => r.data.hospitals || []));
+  const { data: staffData, reload: reloadStaff } = useAsync(() => api.get('/admin/staff').then(r => r.data || []));
+
+  const [form, setForm] = useState({ name: '', short_name: '', city: 'Riyadh', phone: '', kiosk_pin: '' });
+  const [adminModalHosp, setAdminModalHosp] = useState(null);
+  const [adminForm, setAdminForm] = useState({ full_name: '', phone: '', preferred_lang: 'en' });
+  const [state, setState] = useState({ err: '', ok: '' });
+  const [adminState, setAdminState] = useState({ err: '', ok: '' });
+
+  const reloadAll = () => {
+    reloadHosps();
+    reloadStaff();
+  };
+
+  const createHosp = async (e) => {
+    e?.preventDefault();
+    setState({ err: '', ok: '' });
+    try {
+      await api.post('/admin/hospitals', {
+        name: form.name.trim(),
+        short_name: form.short_name.trim().toUpperCase() || form.name.slice(0, 4).toUpperCase(),
+        city: form.city.trim(),
+        phone: form.phone.trim() || null,
+        kiosk_pin: form.kiosk_pin.trim() || undefined
+      });
+      setState({ ok: 'Hospital provisioned successfully!', err: '' });
+      setForm({ name: '', short_name: '', city: 'Riyadh', phone: '', kiosk_pin: '' });
+      reloadAll();
+    } catch (err) {
+      setState({ err: errMsg(err), ok: '' });
+    }
+  };
+
+  const toggleHosp = async (h) => {
+    try {
+      await api.patch(`/admin/hospitals/${h.id}`, { is_active: !h.is_active });
+      reloadAll();
+    } catch (err) {
+      setState({ err: errMsg(err), ok: '' });
+    }
+  };
+
+  const toggleStaff = async (s) => {
+    try {
+      await api.patch(`/admin/staff/${s.id}/active`, { is_active: !s.is_active });
+      reloadAll();
+    } catch (err) {
+      setState({ err: errMsg(err), ok: '' });
+    }
+  };
+
+  const createAdmin = async (e) => {
+    e?.preventDefault();
+    if (!adminModalHosp) return;
+    setAdminState({ err: '', ok: '' });
+    try {
+      await api.post(`/admin/hospitals/${adminModalHosp.id}/admins`, {
+        full_name: adminForm.full_name.trim(),
+        phone: adminForm.phone.trim(),
+        preferred_lang: adminForm.preferred_lang
+      });
+      setAdminState({ ok: 'Hospital Admin created! They can now log in via WhatsApp OTP.', err: '' });
+      setAdminForm({ full_name: '', phone: '', preferred_lang: 'en' });
+      reloadAll();
+    } catch (err) {
+      setAdminState({ err: errMsg(err), ok: '' });
+    }
+  };
+
+  const hospitals = hospData || [];
+  const staff = staffData || [];
+
+  return (
+    <div>
+      <Msg err={hospErr || state.err} ok={state.ok} />
+      
+      <table>
+        <thead>
+          <tr>
+            <th>{t('hospitalName')}</th>
+            <th>{t('shortName')}</th>
+            <th>{t('city')}</th>
+            <th>{t('kioskPin')}</th>
+            <th>{t('status')}</th>
+            <th>{t('roleHospitalAdmin')}</th>
+            <th>{t('actions')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {hospitals.map(h => {
+            const hospAdmins = staff.filter(s => s.hospital_id === h.id && s.role === 'hospital_admin');
+            return (
+              <tr key={h.id}>
+                <td><strong>{h.name}</strong></td>
+                <td><code>{h.short_name}</code></td>
+                <td>{h.city}</td>
+                <td><code>{h.kiosk_pin}</code></td>
+                <td>{h.is_active ? t('active') : t('inactive')}</td>
+                <td>
+                  {hospAdmins.length === 0 ? (
+                    <span className="muted">No admin assigned</span>
+                  ) : (
+                    <div style={{ fontSize: 13 }}>
+                      {hospAdmins.map(a => (
+                        <div key={a.id} style={{ marginBottom: 4 }}>
+                          <strong>{a.full_name}</strong> ({a.phone_e164 || a.phone}){' '}
+                          <button
+                            style={{ padding: '1px 6px', fontSize: 11 }}
+                            onClick={() => toggleStaff(a)}
+                          >
+                            {a.is_active ? t('deactivate') : t('activate')}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  <div className="row" style={{ gap: 6 }}>
+                    <button
+                      style={{ fontSize: 12, padding: '3px 8px' }}
+                      onClick={() => {
+                        setAdminModalHosp(h);
+                        setAdminState({ err: '', ok: '' });
+                      }}
+                    >
+                      + {t('addHospitalAdmin')}
+                    </button>
+                    <button
+                      style={{ fontSize: 12, padding: '3px 8px' }}
+                      onClick={() => toggleHosp(h)}
+                    >
+                      {h.is_active ? t('deactivate') : t('activate')}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {adminModalHosp && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200 }}>
+          <div className="box" style={{ background: '#fff', maxWidth: 500, width: '90%', padding: 24 }}>
+            <h3>{t('addHospitalAdmin')}</h3>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Hospital: <strong>{adminModalHosp.name}</strong> ({adminModalHosp.short_name})
+            </p>
+            <Msg err={adminState.err} ok={adminState.ok} />
+            <form onSubmit={createAdmin}>
+              <Field label={t('fullName')}>
+                <input
+                  required
+                  placeholder="e.g. Adrian Lewis (Operations Lead)"
+                  value={adminForm.full_name}
+                  onChange={e => setAdminForm({ ...adminForm, full_name: e.target.value })}
+                />
+              </Field>
+              <Field label={t('phone') + ' (WhatsApp Mobile)'}>
+                <input
+                  required
+                  dir="ltr"
+                  placeholder="e.g. +966501112233"
+                  value={adminForm.phone}
+                  onChange={e => setAdminForm({ ...adminForm, phone: e.target.value })}
+                />
+              </Field>
+              <Field label={t('language')}>
+                <select
+                  value={adminForm.preferred_lang}
+                  onChange={e => setAdminForm({ ...adminForm, preferred_lang: e.target.value })}
+                >
+                  <option value="en">English (en)</option>
+                  <option value="ar">العربية (ar)</option>
+                </select>
+              </Field>
+              <div className="row" style={{ marginTop: 16 }}>
+                <button type="submit">{t('addHospitalAdmin')}</button>
+                <button type="button" onClick={() => setAdminModalHosp(null)}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <h2>{t('provisionHospital')}</h2>
+      <form onSubmit={createHosp}>
+        <div className="grid2">
+          <Field label={t('hospitalName')}>
+            <input
+              required
+              placeholder="e.g. King Fahd Medical City"
+              value={form.name}
+              onChange={e => setForm({ ...form, name: e.target.value })}
+            />
+          </Field>
+          <Field label={t('shortName')}>
+            <input
+              placeholder="e.g. KFMC"
+              value={form.short_name}
+              onChange={e => setForm({ ...form, short_name: e.target.value })}
+            />
+          </Field>
+          <Field label={t('city')}>
+            <input
+              required
+              placeholder="e.g. Riyadh"
+              value={form.city}
+              onChange={e => setForm({ ...form, city: e.target.value })}
+            />
+          </Field>
+          <Field label={t('phone')}>
+            <input
+              dir="ltr"
+              placeholder="e.g. +966112345678"
+              value={form.phone}
+              onChange={e => setForm({ ...form, phone: e.target.value })}
+            />
+          </Field>
+          <Field label={t('kioskPin') + ' (6 digits, optional)'}>
+            <input
+              dir="ltr"
+              maxLength={6}
+              placeholder="Leave blank to auto-generate"
+              value={form.kiosk_pin}
+              onChange={e => setForm({ ...form, kiosk_pin: e.target.value })}
+            />
+          </Field>
+        </div>
+        <button type="submit">{t('provisionHospital')}</button>
+      </form>
+    </div>
+  );
+}
+
 export default function Admin() {
   const { t } = useI18n();
   const [tab, setTab] = useState('staff');
-  const tabs = [['staff', 'staffMgmt'], ['formulary', 'formularyAdmin'], ['services', 'servicesAdmin'], ['sla', 'sla'], ['whatsapp', 'whatsapp'], ['audit', 'auditLog']];
+  const tabs = [
+    ['staff', 'staffMgmt'],
+    ['hospitals', 'hospitalsAdmin'],
+    ['formulary', 'formularyAdmin'],
+    ['services', 'servicesAdmin'],
+    ['sla', 'sla'],
+    ['whatsapp', 'whatsapp'],
+    ['audit', 'auditLog']
+  ];
   return (
     <div>
       <h1>{t('admin')}</h1>
@@ -338,6 +584,7 @@ export default function Admin() {
         {tabs.map(([key, label]) => <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{t(label)}</button>)}
       </div>
       {tab === 'staff' && <StaffTab />}
+      {tab === 'hospitals' && <HospitalsTab />}
       {tab === 'formulary' && <FormularyTab />}
       {tab === 'services' && <ServicesTab />}
       {tab === 'sla' && <SlaTab />}

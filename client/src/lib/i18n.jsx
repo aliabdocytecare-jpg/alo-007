@@ -140,7 +140,11 @@ const DICT = {
     chkIdentity: 'Patient identity and demographics verified', chkQuestions: 'All clinical questions addressed',
     chkRedFlags: 'Red flags and contraindications cleared', chkTranslation: 'Bilingual medical translation verified',
     publishReport: 'Publish Final Report', reportPublished: 'Final Report Published',
-    intlQueue: 'International Second Opinions Queue', dispatchSpecialist: 'Dispatch to Global Specialist'
+    intlQueue: 'International Second Opinions Queue', dispatchSpecialist: 'Dispatch to Global Specialist',
+    hospitalsAdmin: 'Hospitals & Clinics', provisionHospital: 'Provision Hospital', addHospitalAdmin: 'Add Hospital Admin',
+    addStaffMember: 'Add Staff Member', hospitalName: 'Hospital Name', shortName: 'Short Code',
+    kioskPin: 'Kiosk PIN', roleDoctor: 'Doctor', roleReception: 'Reception',
+    roleLab: 'Lab Technician', rolePharmacy: 'Pharmacist', roleHospitalAdmin: 'Hospital Admin'
   },
   ar: {
     app: 'الو دوك', home: 'الرئيسية', myCases: 'حالاتي', notifications: 'الإشعارات', logout: 'تسجيل الخروج', login: 'تسجيل الدخول',
@@ -280,7 +284,11 @@ const DICT = {
     chkIdentity: 'تم التحقق من هوية وبيانات المريض', chkQuestions: 'تمت الإجابة عن كافة التساؤلات السريرية',
     chkRedFlags: 'تم التأكد من استبعاد أي علامات خطر حرجة', chkTranslation: 'تم التحقق من دقة الترجمة الطبية',
     publishReport: 'إصدار التقرير النهائي للمريض', reportPublished: 'تم إصدار التقرير النهائي',
-    intlQueue: 'قائمة طلبات الرأي الطبي الدولي', dispatchSpecialist: 'إسناد الطلب لاستشاري دولي'
+    intlQueue: 'قائمة طلبات الرأي الطبي الدولي', dispatchSpecialist: 'إسناد الطلب لاستشاري دولي',
+    hospitalsAdmin: 'المستشفيات والعيادات', provisionHospital: 'إضافة مستشفى شريك', addHospitalAdmin: 'إضافة مسؤول مستشفى',
+    addStaffMember: 'إضافة موظف للمستشفى', hospitalName: 'اسم المستشفى', shortName: 'الرمز المختصر',
+    kioskPin: 'رمز الكشك', roleDoctor: 'طبيب', roleReception: 'استقبال',
+    roleLab: 'فني مختبر', rolePharmacy: 'صيدلي', roleHospitalAdmin: 'مسؤول مستشفى'
   }
 };
 

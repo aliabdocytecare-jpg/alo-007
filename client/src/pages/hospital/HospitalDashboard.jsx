@@ -51,6 +51,14 @@ export default function HospitalDashboard() {
   // 5. Admin State
   const [staffList, setStaffList] = useState([]);
   const [slotTemplates, setSlotTemplates] = useState([]);
+  const [showAddStaff, setShowAddStaff] = useState(false);
+  const [newStaff, setNewStaff] = useState({
+    full_name: '',
+    role: 'doctor',
+    specialty: 'General Practice',
+    phone: '',
+    preferred_lang: 'en'
+  });
 
   // Search & Print Enhancements (DEC-063)
   const [receptionSearch, setReceptionSearch] = useState('');
@@ -223,6 +231,36 @@ export default function HospitalDashboard() {
       await api.post(`/hospital/pharmacy/medications/${medId}/dispense`, { dispense_note: dispenseNote });
       setOk('Prescription dispensed.');
       setDispenseNote('');
+      reloadData();
+    } catch (e) { setErr(errMsg(e)); }
+  };
+
+  // Admin: Create staff member (doctor, reception, lab, pharmacy)
+  const createStaff = async (e) => {
+    e?.preventDefault();
+    setErr(''); setOk('');
+    try {
+      const payload = {
+        full_name: newStaff.full_name.trim(),
+        role: newStaff.role,
+        specialty: newStaff.role === 'doctor' ? (newStaff.specialty.trim() || 'General Practice') : null,
+        phone: newStaff.phone.trim(),
+        preferred_lang: newStaff.preferred_lang
+      };
+      await api.post('/hospital/staff', payload);
+      setOk(`Staff member ${newStaff.full_name} (${newStaff.role}) created successfully!`);
+      setShowAddStaff(false);
+      setNewStaff({ full_name: '', role: 'doctor', specialty: 'General Practice', phone: '', preferred_lang: 'en' });
+      reloadData();
+    } catch (e) { setErr(errMsg(e)); }
+  };
+
+  // Admin: Toggle staff active/inactive
+  const toggleStaffActive = async (s) => {
+    setErr(''); setOk('');
+    try {
+      await api.patch(`/hospital/staff/${s.id}/active`, { is_active: !s.is_active });
+      setOk(`Staff member ${s.full_name} is now ${!s.is_active ? 'active' : 'inactive'}.`);
       reloadData();
     } catch (e) { setErr(errMsg(e)); }
   };
@@ -583,10 +621,22 @@ export default function HospitalDashboard() {
       {tab === 'hospital_admin' && (
         <div>
           <section className="box">
-            <h2>Hospital Staff Members ({staffList.length})</h2>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={{ margin: 0 }}>Hospital Staff Members ({staffList.length})</h2>
+              <button className="btn" onClick={() => setShowAddStaff(true)}>
+                + {t('addStaffMember')}
+              </button>
+            </div>
             <table>
               <thead>
-                <tr><th>Full Name</th><th>Role</th><th>Phone (E.164)</th><th>Specialty</th><th>Status</th></tr>
+                <tr>
+                  <th>Full Name</th>
+                  <th>Role</th>
+                  <th>Phone (E.164)</th>
+                  <th>Specialty</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
               </thead>
               <tbody>
                 {staffList.map(s => (
@@ -596,11 +646,84 @@ export default function HospitalDashboard() {
                     <td>{s.phone_e164 || s.phone}</td>
                     <td>{s.specialty || '—'}</td>
                     <td><span className="badge">{s.is_active ? 'Active' : 'Inactive'}</span></td>
+                    <td>
+                      {s.id !== session?.staff?.id ? (
+                        <button
+                          style={{ fontSize: 11, padding: '2px 8px' }}
+                          onClick={() => toggleStaffActive(s)}
+                        >
+                          {s.is_active ? t('deactivate') : t('activate')}
+                        </button>
+                      ) : (
+                        <span className="muted" style={{ fontSize: 12 }}>Current User</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </section>
+
+          {/* Add Staff Modal */}
+          {showAddStaff && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200 }}>
+              <div className="box" style={{ background: '#fff', maxWidth: 480, width: '90%', padding: 24 }}>
+                <h3 style={{ marginTop: 0 }}>{t('addStaffMember')}</h3>
+                <form onSubmit={createStaff}>
+                  <Field label="Full Name">
+                    <input
+                      required
+                      placeholder="e.g. Dr. Marcus Vance"
+                      value={newStaff.full_name}
+                      onChange={e => setNewStaff({ ...newStaff, full_name: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Staff Role">
+                    <select
+                      value={newStaff.role}
+                      onChange={e => setNewStaff({ ...newStaff, role: e.target.value })}
+                    >
+                      <option value="doctor">{t('roleDoctor')}</option>
+                      <option value="reception">{t('roleReception')}</option>
+                      <option value="lab">{t('roleLab')}</option>
+                      <option value="pharmacy">{t('rolePharmacy')}</option>
+                    </select>
+                  </Field>
+                  {newStaff.role === 'doctor' && (
+                    <Field label="Clinical Specialty">
+                      <input
+                        placeholder="e.g. Cardiology, Internal Medicine"
+                        value={newStaff.specialty}
+                        onChange={e => setNewStaff({ ...newStaff, specialty: e.target.value })}
+                      />
+                    </Field>
+                  )}
+                  <Field label="WhatsApp Mobile (+CountryCode...)">
+                    <input
+                      required
+                      dir="ltr"
+                      placeholder="e.g. +966501112244"
+                      value={newStaff.phone}
+                      onChange={e => setNewStaff({ ...newStaff, phone: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Preferred Language">
+                    <select
+                      value={newStaff.preferred_lang}
+                      onChange={e => setNewStaff({ ...newStaff, preferred_lang: e.target.value })}
+                    >
+                      <option value="en">English (en)</option>
+                      <option value="ar">العربية (ar)</option>
+                    </select>
+                  </Field>
+                  <div className="row" style={{ marginTop: 16 }}>
+                    <button type="submit" className="btn">{t('addStaffMember')}</button>
+                    <button type="button" onClick={() => setShowAddStaff(false)}>Cancel</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
 
           <section className="box">
             <h2>Doctor Slot Templates ({slotTemplates.length})</h2>
