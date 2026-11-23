@@ -8,7 +8,19 @@ export function AuthProvider({ children }) {
   const refresh = async () => {
     try {
       const { data } = await api.get('/auth/me');
-      setSession(data);
+      if (data) {
+        const hospitalId = data.hospital_id || data.profile?.hospital_id || data.hospital?.id || null;
+        const tenant = data.tenant || data.hospital || null;
+        const staff = data.staff || data.profile || null;
+        setSession({
+          ...data,
+          hospital_id: hospitalId,
+          tenant,
+          staff
+        });
+      } else {
+        setSession(null);
+      }
     } catch {
       setSession(null);
     }

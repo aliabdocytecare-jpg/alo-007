@@ -38,16 +38,18 @@ function Layout({ children }) {
   }, [session]);
 
   const doLogout = async () => { await logout(); nav('/login'); };
+  const hospId = session?.hospital_id || session?.profile?.hospital_id || session?.hospital?.id;
+  const tenantName = session?.tenant?.name || session?.hospital?.name || 'Hospital Clinic';
 
   return (
     <>
       <header className="top">
-        <Link className="brand" to={session?.kind === 'patient' ? '/' : session?.hospital_id ? '/hospital' : '/staff'}>
+        <Link className="brand" to={session?.kind === 'patient' ? '/' : hospId ? '/hospital' : '/staff'}>
           {t('app')}
         </Link>
         <nav>
           {session?.kind === 'patient' && (<><Link to="/">{t('home')}</Link><Link to="/cases">{t('myCases')}</Link></>)}
-          {session?.kind === 'staff' && !session.hospital_id && session.role !== 'admin' && (
+          {session?.kind === 'staff' && !hospId && session.role !== 'admin' && (
             <>
               <Link to="/staff">{t('dashboard')}</Link>
               {session.role === 'coordinator' && <Link to="/staff/intl-opinions">{t('intlQueue')}</Link>}
@@ -60,8 +62,8 @@ function Layout({ children }) {
               <Link to="/admin">{t('admin')}</Link>
             </>
           )}
-          {session?.hospital_id && (
-            <Link to="/hospital">{session?.tenant?.name || 'Hospital Clinic'}</Link>
+          {hospId && (
+            <Link to="/hospital">{tenantName}</Link>
           )}
           {session && <Link to="/notifications">{t('notifications')}{unread > 0 ? ` [${unread}]` : ''}</Link>}
         </nav>
@@ -80,8 +82,16 @@ function Guard({ roles, children }) {
   const { t } = useI18n();
   if (session === undefined) return <Layout><p>{t('loading')}</p></Layout>;
   if (!session) return <Navigate to="/login" replace />;
+  const hospId = session.hospital_id || session.profile?.hospital_id || session.hospital?.id;
   if (roles && !roles.includes(session.role) && !roles.includes(session.kind)) {
-    return <Navigate to={session.kind === 'patient' ? '/' : session.hospital_id ? '/hospital' : session.role === 'admin' ? '/admin' : '/staff'} replace />;
+    const dest = session.kind === 'patient'
+      ? '/'
+      : hospId
+        ? '/hospital'
+        : session.role === 'admin'
+          ? '/admin'
+          : '/staff';
+    return <Navigate to={dest} replace />;
   }
   return <Layout>{children}</Layout>;
 }
@@ -114,8 +124,8 @@ export default function App() {
         <Route path="/admin" element={<Guard roles={['admin']}><Admin /></Guard>} />
 
         {/* Hospital Clinic Portal */}
-        <Route path="/hospital" element={<Guard><HospitalDashboard /></Guard>} />
-        <Route path="/hospital/*" element={<Guard><HospitalDashboard /></Guard>} />
+        <Route path="/hospital" element={<Guard roles={['hospital_admin', 'doctor', 'reception', 'lab', 'pharmacy']}><HospitalDashboard /></Guard>} />
+        <Route path="/hospital/*" element={<Guard roles={['hospital_admin', 'doctor', 'reception', 'lab', 'pharmacy']}><HospitalDashboard /></Guard>} />
 
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

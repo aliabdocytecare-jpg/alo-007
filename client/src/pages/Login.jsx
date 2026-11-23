@@ -25,7 +25,8 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
 
   if (session) {
-    return <Navigate to={session.kind === 'patient' ? '/' : session.hospital_id ? '/hospital' : session.role === 'admin' ? '/admin' : '/staff'} replace />;
+    const hospId = session.hospital_id || session.profile?.hospital_id || session.hospital?.id;
+    return <Navigate to={session.kind === 'patient' ? '/' : hospId ? '/hospital' : session.role === 'admin' ? '/admin' : '/staff'} replace />;
   }
 
   const sendOtp = async () => {

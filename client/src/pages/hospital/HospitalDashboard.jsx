@@ -13,7 +13,7 @@ export default function HospitalDashboard() {
   // Role auto-selection
   const userRole = session?.role || 'hospital_admin';
   const defaultTab = ['reception', 'doctor', 'lab', 'pharmacy', 'hospital_admin'].includes(userRole)
-    ? (userRole === 'hospital_admin' ? 'reception' : userRole)
+    ? (userRole === 'hospital_admin' ? 'hospital_admin' : userRole)
     : 'reception';
 
   const [tab, setTab] = useState(defaultTab);

@@ -182,7 +182,15 @@ export const me = ah(async (req, res) => {
     hospital = hosp;
   }
 
-  res.json({ kind: req.session.kind, role: req.session.role, profile: data, hospital });
+  res.json({
+    kind: req.session.kind,
+    role: req.session.role,
+    profile: data,
+    staff: data,
+    hospital,
+    tenant: hospital,
+    hospital_id: data.hospital_id || req.session.hospital_id || null
+  });
 });
 
 export const updateProfile = ah(async (req, res) => {
