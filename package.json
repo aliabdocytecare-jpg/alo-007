@@ -1,0 +1,13 @@
+{
+  "name": "alodoc-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n \"API,WEB\" -c \"cyan,magenta\" \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "build": "npm --prefix client run build",
+    "preflight": "npm --prefix server run preflight"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

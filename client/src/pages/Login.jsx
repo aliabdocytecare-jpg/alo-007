@@ -4,7 +4,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { api, errMsg } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useI18n } from '../lib/i18n';
-import { Msg, Field } from '../components/ui';
+import { Msg, Field, PasswordInput } from '../components/ui';
 
 export default function Login() {
   const { t, toggle } = useI18n();
@@ -163,7 +163,13 @@ export default function Login() {
       {tab === 'staff' && (
         <section className="box">
           <Field label={t('email')}><input value={staff.email} onChange={e => setStaff({ ...staff, email: e.target.value })} dir="ltr" /></Field>
-          <Field label={t('password')}><input type="password" value={staff.password} onChange={e => setStaff({ ...staff, password: e.target.value })} dir="ltr" /></Field>
+          <Field label={t('password')}>
+            <PasswordInput
+              value={staff.password}
+              onChange={e => setStaff({ ...staff, password: e.target.value })}
+              dir="ltr"
+            />
+          </Field>
           <div className="row" style={{ marginTop: 10 }}><button onClick={staffLogin} disabled={busy}>{t('login')}</button></div>
         </section>
       )}

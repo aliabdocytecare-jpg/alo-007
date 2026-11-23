@@ -92,6 +92,50 @@ export const updateService = ah(async (req, res) => {
   res.json({ ok: true });
 });
 
+// DEC-066: Medical Specialties Management (Admin CRUD + public active directory)
+export const listSpecialtiesAdmin = ah(async (req, res) => {
+  const { data } = await db.from('specialties').select().order('name_en');
+  res.json(data || []);
+});
+
+export const listPublicSpecialties = ah(async (req, res) => {
+  const { data } = await db.from('specialties').select().eq('is_active', true).order('name_en');
+  res.json(data || []);
+});
+
+export const createSpecialty = ah(async (req, res) => {
+  const { name_en, name_ar } = req.body;
+  if (!name_en?.trim() || !name_ar?.trim()) {
+    throw httpError(400, 'Both English and Arabic specialty names are required.', 'INVALID_SPECIALTY');
+  }
+  const cleanEn = name_en.trim();
+  const cleanAr = name_ar.trim();
+  const { data: existing } = await db.from('specialties').select('id').ilike('name_en', cleanEn).maybeSingle();
+  if (existing) {
+    throw httpError(409, 'Specialty with this English name already exists.', 'DUPLICATE_SPECIALTY');
+  }
+  const { data, error } = await db.from('specialties').insert({
+    name_en: cleanEn,
+    name_ar: cleanAr,
+    is_active: true
+  }).select().single();
+  if (error) throw httpError(500, error.message);
+  await audit(req, 'SPECIALTY_CREATED', { resourceType: 'specialty', resourceId: data.id, detail: { name_en: cleanEn, name_ar: cleanAr } });
+  res.status(201).json({ ok: true, specialty: data });
+});
+
+export const updateSpecialty = ah(async (req, res) => {
+  const patch = {};
+  if (req.body.is_active !== undefined) patch.is_active = !!req.body.is_active;
+  if (req.body.name_en?.trim()) patch.name_en = req.body.name_en.trim();
+  if (req.body.name_ar?.trim()) patch.name_ar = req.body.name_ar.trim();
+  if (Object.keys(patch).length === 0) throw httpError(400, 'No updates provided');
+  const { error } = await db.from('specialties').update(patch).eq('id', req.params.id);
+  if (error) throw httpError(500, error.message);
+  await audit(req, 'SPECIALTY_UPDATED', { resourceType: 'specialty', resourceId: req.params.id, detail: patch });
+  res.json({ ok: true });
+});
+
 export const listSla = ah(async (req, res) => {
   const { data } = await db.from('sla_config').select().order('status');
   res.json(data || []);

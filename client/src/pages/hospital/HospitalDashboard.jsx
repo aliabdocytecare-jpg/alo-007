@@ -10,13 +10,21 @@ export default function HospitalDashboard() {
   const { session } = useAuth();
   const { t } = useI18n();
 
-  // Role auto-selection
+  // Role auto-selection & tab isolation (DEC-066)
   const userRole = session?.role || 'hospital_admin';
-  const defaultTab = ['reception', 'doctor', 'lab', 'pharmacy', 'hospital_admin'].includes(userRole)
-    ? (userRole === 'hospital_admin' ? 'hospital_admin' : userRole)
-    : 'reception';
+  const roleTabsMap = {
+    doctor: ['doctor'],
+    reception: ['reception'],
+    lab: ['lab'],
+    pharmacy: ['pharmacy'],
+    hospital_admin: ['reception', 'doctor', 'lab', 'pharmacy', 'hospital_admin'],
+    admin: ['reception', 'doctor', 'lab', 'pharmacy', 'hospital_admin']
+  };
+  const allowedTabs = roleTabsMap[userRole] || ['reception'];
+  const defaultTab = userRole === 'hospital_admin' ? 'hospital_admin' : (allowedTabs.includes(userRole) ? userRole : allowedTabs[0]);
 
   const [tab, setTab] = useState(defaultTab);
+  const [specialtiesList, setSpecialtiesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
@@ -68,6 +76,7 @@ export default function HospitalDashboard() {
   const reloadData = async () => {
     setErr('');
     try {
+      api.get('/specialties').then(r => setSpecialtiesList(r.data || [])).catch(() => {});
       if (tab === 'reception' || tab === 'doctor') {
         const qRes = await api.get('/hospital/reception/queue');
         setQueue(qRes.data.queue || {});
@@ -240,10 +249,11 @@ export default function HospitalDashboard() {
     e?.preventDefault();
     setErr(''); setOk('');
     try {
+      const chosenSpecialty = newStaff.specialty.trim() || specialtiesList[0]?.name_en || 'General Medicine';
       const payload = {
         full_name: newStaff.full_name.trim(),
         role: newStaff.role,
-        specialty: newStaff.role === 'doctor' ? (newStaff.specialty.trim() || 'General Practice') : null,
+        specialty: newStaff.role === 'doctor' ? chosenSpecialty : null,
         phone: newStaff.phone.trim(),
         preferred_lang: newStaff.preferred_lang
       };
@@ -289,19 +299,21 @@ export default function HospitalDashboard() {
         <button onClick={reloadData}>{t('refresh')}</button>
       </div>
 
-      {/* Role Navigation Tabs */}
-      <div className="tabs" style={{ marginTop: 16 }}>
-        <button className={tab === 'reception' ? 'active' : ''} onClick={() => setTab('reception')}>{t('hospitalReception')}</button>
-        <button className={tab === 'doctor' ? 'active' : ''} onClick={() => setTab('doctor')}>{t('hospitalDoctor')}</button>
-        <button className={tab === 'lab' ? 'active' : ''} onClick={() => setTab('lab')}>{t('hospitalLab')}</button>
-        <button className={tab === 'pharmacy' ? 'active' : ''} onClick={() => setTab('pharmacy')}>{t('hospitalPharmacy')}</button>
-        <button className={tab === 'hospital_admin' ? 'active' : ''} onClick={() => setTab('hospital_admin')}>{t('hospitalAdmin')}</button>
-      </div>
+      {/* Role Navigation Tabs (DEC-066: isolated by staff role) */}
+      {allowedTabs.length > 1 && (
+        <div className="tabs" style={{ marginTop: 16 }}>
+          {allowedTabs.includes('reception') && <button className={tab === 'reception' ? 'active' : ''} onClick={() => setTab('reception')}>{t('hospitalReception')}</button>}
+          {allowedTabs.includes('doctor') && <button className={tab === 'doctor' ? 'active' : ''} onClick={() => setTab('doctor')}>{t('hospitalDoctor')}</button>}
+          {allowedTabs.includes('lab') && <button className={tab === 'lab' ? 'active' : ''} onClick={() => setTab('lab')}>{t('hospitalLab')}</button>}
+          {allowedTabs.includes('pharmacy') && <button className={tab === 'pharmacy' ? 'active' : ''} onClick={() => setTab('pharmacy')}>{t('hospitalPharmacy')}</button>}
+          {allowedTabs.includes('hospital_admin') && <button className={tab === 'hospital_admin' ? 'active' : ''} onClick={() => setTab('hospital_admin')}>{t('hospitalAdmin')}</button>}
+        </div>
+      )}
 
       <Msg err={err} ok={ok} />
 
       {/* TAB 1: RECEPTION DESK */}
-      {tab === 'reception' && (
+      {tab === 'reception' && allowedTabs.includes('reception') && (
         <div>
           <section className="box">
             <h2>Fast Patient Check-In</h2>
@@ -390,7 +402,7 @@ export default function HospitalDashboard() {
       )}
 
       {/* TAB 2: DOCTOR CONSULTATION DESK */}
-      {tab === 'doctor' && (
+      {tab === 'doctor' && allowedTabs.includes('doctor') && (
         <div>
           {!activeCase ? (
             <section className="box">
@@ -525,7 +537,7 @@ export default function HospitalDashboard() {
       )}
 
       {/* TAB 3: LABORATORY WORKBENCH */}
-      {tab === 'lab' && (
+      {tab === 'lab' && allowedTabs.includes('lab') && (
         <div>
           <section className="box">
             <h2>Hospital Lab Order Queue</h2>
@@ -591,7 +603,7 @@ export default function HospitalDashboard() {
       )}
 
       {/* TAB 4: PHARMACY DISPENSING */}
-      {tab === 'pharmacy' && (
+      {tab === 'pharmacy' && allowedTabs.includes('pharmacy') && (
         <section className="box">
           <h2>Hospital Pharmacy Dispensing Desk</h2>
           {!rxQueue.length && <p className="muted">No pending prescriptions in queue.</p>}
@@ -618,7 +630,7 @@ export default function HospitalDashboard() {
       )}
 
       {/* TAB 5: ADMIN / SLOTS */}
-      {tab === 'hospital_admin' && (
+      {tab === 'hospital_admin' && allowedTabs.includes('hospital_admin') && (
         <div>
           <section className="box">
             <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -690,12 +702,18 @@ export default function HospitalDashboard() {
                     </select>
                   </Field>
                   {newStaff.role === 'doctor' && (
-                    <Field label="Clinical Specialty">
-                      <input
-                        placeholder="e.g. Cardiology, Internal Medicine"
-                        value={newStaff.specialty}
+                    <Field label={t('selectSpecialty') || 'Clinical Specialty'}>
+                      <select
+                        required
+                        value={newStaff.specialty || (specialtiesList[0]?.name_en || '')}
                         onChange={e => setNewStaff({ ...newStaff, specialty: e.target.value })}
-                      />
+                      >
+                        {specialtiesList.map(s => (
+                          <option key={s.id} value={s.name_en}>
+                            {s.name_en} {s.name_ar ? `(${s.name_ar})` : ''}
+                          </option>
+                        ))}
+                      </select>
                     </Field>
                   )}
                   <Field label="WhatsApp Mobile (+CountryCode...)">

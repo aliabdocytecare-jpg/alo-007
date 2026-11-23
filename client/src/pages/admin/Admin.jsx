@@ -3,16 +3,26 @@
 import { useState, useEffect } from 'react';
 import { api, errMsg, fmtDate } from '../../lib/api';
 import { useI18n } from '../../lib/i18n';
-import { Msg, Field, useAsync } from '../../components/ui';
+import { Msg, Field, PasswordInput, useAsync } from '../../components/ui';
 
 function StaffTab() {
   const { t } = useI18n();
   const { data, err, reload } = useAsync(() => api.get('/admin/staff').then(r => r.data));
+  const { data: specData } = useAsync(() => api.get('/specialties').then(r => r.data || []));
   const [form, setForm] = useState({ full_name: '', role: 'nurse', email: '', phone: '', password: '', specialty: '' });
   const [state, setState] = useState({ err: '', ok: '' });
   const create = async () => {
     setState({ err: '', ok: '' });
-    try { await api.post('/admin/staff', form); setState({ ok: 'OK', err: '' }); setForm({ full_name: '', role: 'nurse', email: '', phone: '', password: '', specialty: '' }); reload(); }
+    try {
+      const payload = { ...form };
+      if (payload.role === 'doctor' && !payload.specialty && specData?.length) {
+        payload.specialty = specData[0].name_en;
+      }
+      await api.post('/admin/staff', payload);
+      setState({ ok: 'OK', err: '' });
+      setForm({ full_name: '', role: 'nurse', email: '', phone: '', password: '', specialty: '' });
+      reload();
+    }
     catch (e) { setState({ err: errMsg(e), ok: '' }); }
   };
   const toggle = async s => { await api.patch(`/admin/staff/${s.id}/active`, { is_active: !s.is_active }); reload(); };
@@ -41,8 +51,27 @@ function StaffTab() {
         </Field>
         <Field label={t('email')}><input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} dir="ltr" /></Field>
         <Field label={t('phone')}><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} dir="ltr" /></Field>
-        <Field label={t('password')}><input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} dir="ltr" /></Field>
-        <Field label={t('specialty')}><input value={form.specialty} onChange={e => setForm({ ...form, specialty: e.target.value })} /></Field>
+        <Field label={t('password')}>
+          <PasswordInput
+            value={form.password}
+            onChange={e => setForm({ ...form, password: e.target.value })}
+            dir="ltr"
+          />
+        </Field>
+        {form.role === 'doctor' ? (
+          <Field label={t('specialty')}>
+            <select
+              value={form.specialty || (specData?.[0]?.name_en || '')}
+              onChange={e => setForm({ ...form, specialty: e.target.value })}
+            >
+              {(specData || []).map(s => (
+                <option key={s.id} value={s.name_en}>{s.name_en} {s.name_ar ? `(${s.name_ar})` : ''}</option>
+              ))}
+            </select>
+          </Field>
+        ) : (
+          <Field label={t('specialty')}><input value={form.specialty} onChange={e => setForm({ ...form, specialty: e.target.value })} /></Field>
+        )}
       </div>
       <button onClick={create}>{t('createStaff')}</button>
     </div>
@@ -275,8 +304,13 @@ function WhatsAppTab() {
         <Field label={t('waWabaId')}><input dir="ltr" value={form.waba_id} onChange={e => set('waba_id', e.target.value)} /></Field>
         <Field label={t('waPhoneNumberId')}><input dir="ltr" value={form.phone_number_id} onChange={e => set('phone_number_id', e.target.value)} /></Field>
         <Field label={t('waToken')}>
-          <input dir="ltr" type="password" autoComplete="off" value={form.token}
-            placeholder={data?.token_set ? t('waTokenKeep') : ''} onChange={e => set('token', e.target.value)} />
+          <PasswordInput
+            dir="ltr"
+            autoComplete="off"
+            value={form.token}
+            placeholder={data?.token_set ? t('waTokenKeep') : ''}
+            onChange={e => set('token', e.target.value)}
+          />
         </Field>
         <Field label={t('waApiVersion')}><input dir="ltr" value={form.api_version} onChange={e => set('api_version', e.target.value)} /></Field>
         <Field label={t('waOtpTemplate')}><input dir="ltr" value={form.otp_template} onChange={e => set('otp_template', e.target.value)} /></Field>
@@ -565,12 +599,104 @@ function HospitalsTab() {
   );
 }
 
+function SpecialtiesTab() {
+  const { t } = useI18n();
+  const { data: specialties, err, reload } = useAsync(() => api.get('/admin/specialties').then(r => r.data || []));
+  const [form, setForm] = useState({ name_en: '', name_ar: '' });
+  const [state, setState] = useState({ err: '', ok: '' });
+
+  const createSpecialty = async (e) => {
+    e?.preventDefault();
+    setState({ err: '', ok: '' });
+    try {
+      await api.post('/admin/specialties', {
+        name_en: form.name_en.trim(),
+        name_ar: form.name_ar.trim()
+      });
+      setState({ ok: 'Specialty created successfully!', err: '' });
+      setForm({ name_en: '', name_ar: '' });
+      reload();
+    } catch (err) {
+      setState({ err: errMsg(err), ok: '' });
+    }
+  };
+
+  const toggleSpecialty = async (s) => {
+    try {
+      await api.patch(`/admin/specialties/${s.id}`, { is_active: !s.is_active });
+      reload();
+    } catch (err) {
+      setState({ err: errMsg(err), ok: '' });
+    }
+  };
+
+  const list = specialties || [];
+
+  return (
+    <div>
+      <Msg err={err || state.err} ok={state.ok} />
+      <table>
+        <thead>
+          <tr>
+            <th>{t('specialtyNameEn')}</th>
+            <th>{t('specialtyNameAr')}</th>
+            <th>{t('status')}</th>
+            <th>{t('actions')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map(s => (
+            <tr key={s.id}>
+              <td><strong>{s.name_en}</strong></td>
+              <td dir="rtl">{s.name_ar}</td>
+              <td><span className="badge">{s.is_active ? t('active') : t('inactive')}</span></td>
+              <td>
+                <button
+                  style={{ fontSize: 11, padding: '2px 8px' }}
+                  onClick={() => toggleSpecialty(s)}
+                >
+                  {s.is_active ? t('deactivate') : t('activate')}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>{t('provisionSpecialty')}</h2>
+      <form onSubmit={createSpecialty}>
+        <div className="grid2">
+          <Field label={t('specialtyNameEn')}>
+            <input
+              required
+              placeholder="e.g. Cardiology"
+              value={form.name_en}
+              onChange={e => setForm({ ...form, name_en: e.target.value })}
+            />
+          </Field>
+          <Field label={t('specialtyNameAr')}>
+            <input
+              required
+              dir="rtl"
+              placeholder="e.g. أمراض القلب"
+              value={form.name_ar}
+              onChange={e => setForm({ ...form, name_ar: e.target.value })}
+            />
+          </Field>
+        </div>
+        <button type="submit" style={{ marginTop: 8 }}>{t('addSpecialty')}</button>
+      </form>
+    </div>
+  );
+}
+
 export default function Admin() {
   const { t } = useI18n();
   const [tab, setTab] = useState('staff');
   const tabs = [
     ['staff', 'staffMgmt'],
     ['hospitals', 'hospitalsAdmin'],
+    ['specialties', 'specialtiesAdmin'],
     ['formulary', 'formularyAdmin'],
     ['services', 'servicesAdmin'],
     ['sla', 'sla'],
@@ -585,6 +711,7 @@ export default function Admin() {
       </div>
       {tab === 'staff' && <StaffTab />}
       {tab === 'hospitals' && <HospitalsTab />}
+      {tab === 'specialties' && <SpecialtiesTab />}
       {tab === 'formulary' && <FormularyTab />}
       {tab === 'services' && <ServicesTab />}
       {tab === 'sla' && <SlaTab />}

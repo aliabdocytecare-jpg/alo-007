@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { api, errMsg } from '../../lib/api';
 import { useI18n } from '../../lib/i18n';
-import { Msg } from '../../components/ui';
+import { Msg, PasswordInput } from '../../components/ui';
 
 export default function Kiosk() {
   const { t, toggle } = useI18n();
@@ -95,14 +95,14 @@ export default function Kiosk() {
           <p className="muted">Enter the 6-digit hospital kiosk PIN to activate this check-in tablet.</p>
           <Msg err={err} />
           <form onSubmit={doPair}>
-            <input
-              type="password"
-              maxLength={6}
-              placeholder="e.g. 123456"
-              value={pin}
-              onChange={e => setPin(e.target.value)}
-              style={{ fontSize: 24, textAlign: 'center', letterSpacing: 6, margin: '12px 0' }}
-            />
+            <div style={{ margin: '12px 0' }}>
+              <PasswordInput
+                value={pin}
+                onChange={e => setPin(e.target.value)}
+                placeholder="e.g. 123456"
+                autoComplete="off"
+              />
+            </div>
             <button type="submit" disabled={busy || pin.length < 4} style={{ width: '100%', padding: 12 }}>
               {busy ? t('loading') : 'Pair Tablet'}
             </button>

@@ -183,6 +183,10 @@ api.patch('/admin/staff/:id/active', requireRole('admin'), admin.setStaffActive)
 api.get('/admin/formulary', requireRole('admin'), admin.listFormularyAdmin);
 api.post('/admin/formulary', requireRole('admin'), admin.createDrug);
 api.patch('/admin/formulary/:id', requireRole('admin'), admin.updateDrug);
+api.get('/specialties', admin.listPublicSpecialties);
+api.get('/admin/specialties', requireRole('admin'), admin.listSpecialtiesAdmin);
+api.post('/admin/specialties', requireRole('admin'), admin.createSpecialty);
+api.patch('/admin/specialties/:id', requireRole('admin'), admin.updateSpecialty);
 api.get('/admin/services', requireRole('admin'), admin.listServices);
 api.patch('/admin/services/:id', requireRole('admin'), admin.updateService);
 api.get('/admin/sla', requireRole('admin'), admin.listSla);

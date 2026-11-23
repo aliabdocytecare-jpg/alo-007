@@ -501,6 +501,29 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Verification:** Created automated test suite `server/scripts/test-phase9-rork-optimizations.mjs` verifying Bearer authentication, machine error codes, universal linking, CORS permissiveness, telemetry auditing, and inline PDF disposition (10/10 passing checks). Frontend compiled cleanly via `vite build` in 924ms.
 - **Reference:** DEC-004, DEC-014, DEC-056, DEC-064, `client/src/lib/nativeBridge.js`, `server/scripts/test-phase9-rork-optimizations.mjs`.
 
+## DEC-066 — Hospital Role Desk Isolation, Specialties Directory & Password Visibility Toggle
+- **Decision:** Implemented role-based desk boundaries in the physical hospital dashboard, central administrative management for medical specialties with global form dropdowns, reusable password visibility toggles, and coordinator triage guidance:
+  1. Role-Based Desk Boundaries in Hospital Portal:
+     - Updated `client/src/pages/hospital/HospitalDashboard.jsx` to map each staff role to their exact operational desk:
+       - `doctor` role sees exclusively the Doctor Consultation Desk (`doctor`).
+       - `reception` role sees exclusively the Reception Desk (`reception`).
+       - `lab` role sees exclusively the Lab Workbench (`lab`).
+       - `pharmacy` role sees exclusively the Pharmacy Desk (`pharmacy`).
+       - `hospital_admin` and ALO `admin` retain multi-desk oversight.
+     - Single-role staff members have the navigation tab bar cleanly omitted, and unauthorized tab renders are strictly blocked.
+  2. Central Medical Specialties Directory:
+     - Implemented backend endpoints `GET /api/v1/specialties` (public active directory), `GET /api/v1/admin/specialties`, `POST /api/v1/admin/specialties`, and `PATCH /api/v1/admin/specialties/:id` in `server/controllers/adminController.js` and `server/index.js`.
+     - Added the **Specialties** tab to `client/src/pages/admin/Admin.jsx` with bilingual names (`name_en`, `name_ar`), active toggles, and audit logging.
+     - Replaced manual free-text inputs for clinical specialties across doctor provisioning forms in `Admin.jsx` and `HospitalDashboard.jsx` with dynamic `<select>` dropdowns populated from the database.
+  3. Reusable Password Visibility Component:
+     - Created `PasswordInput` in `client/src/components/ui.jsx` with an accessible SVG Eye icon toggle (`type="password"` <-> `type="text"`).
+     - Applied across Staff Sign-In (`client/src/pages/Login.jsx`), Admin Staff Creation (`client/src/pages/admin/Admin.jsx`), WhatsApp Token configuration, and Kiosk Tablet Pairing (`client/src/pages/public/Kiosk.jsx`).
+  4. Coordinator Triage Guidance & Action Panels:
+     - Enriched `CoordinatorPanel` in `client/src/pages/staff/CaseOps.jsx` with contextual status instructions guiding next operational actions.
+     - Enabled ALO Super Admins (`admin`) to directly view and test Coordinator, Nurse, and Doctor action panels.
+- **Verification:** Created test suite `server/scripts/test-phase10-enhancements.mjs` verifying public specialties listing, admin listing, RBAC 403 enforcement, creation, duplicate rejection (409), and status deactivation (100% passing checks). Client compiled with 0 warnings/errors via `vite build` in 1.67s.
+- **Reference:** DEC-004, DEC-056, DEC-061, `client/src/components/ui.jsx`, `client/src/pages/hospital/HospitalDashboard.jsx`, `server/scripts/test-phase10-enhancements.mjs`.
+
 
 
 

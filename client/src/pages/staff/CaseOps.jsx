@@ -47,6 +47,21 @@ function CoordinatorPanel({ c, reload }) {
       <h2>{t('coordinator')} — {t('actions')}</h2>
       <ActionMsg state={state} />
 
+      <div style={{ background: '#f8f8f8', borderLeft: '4px solid #111', padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <strong>Case Status:</strong> <StatusBadge status={c.status} />
+        </div>
+        {c.status === 'INITIAL_REVIEW' && (
+          <p style={{ margin: '4px 0 0' }}>Review initial documents and clinical history. Click <strong>"{t('unassigned')} →"</strong> to mark ready for staff assignment, or request additional documents.</p>
+        )}
+        {c.status === 'READY_FOR_ASSIGNMENT' && (
+          <p style={{ margin: '4px 0 0' }}>Assign a dedicated Nurse or Doctor below, or refer the case directly to a Saudi partner day-clinic.</p>
+        )}
+        {c.status === 'SPECIALIST_ASSIGNED' && (
+          <p style={{ margin: '4px 0 0' }}>Staff / Specialist assigned. Coordinate appointment schedule, review findings, or publish final report.</p>
+        )}
+      </div>
+
       {!c.payment_confirmed && ['SUBMITTED', 'INITIAL_REVIEW'].includes(c.status) && (
         <div className="row">
           <input style={{ maxWidth: 320 }} placeholder={t('paymentNote')} value={payNote} onChange={e => setPayNote(e.target.value)} />
@@ -590,9 +605,9 @@ export default function CaseOps() {
         {c.purpose && <p>{t('purpose')}: {c.purpose}</p>}
       </section>
 
-      {role === 'coordinator' && <CoordinatorPanel c={c} reload={reload} />}
-      {role === 'nurse' && <NursePanel c={c} reload={reload} />}
-      {role === 'doctor' && <DoctorPanel c={c} reload={reload} />}
+      {['coordinator', 'admin'].includes(role) && <CoordinatorPanel c={c} reload={reload} />}
+      {['nurse', 'admin'].includes(role) && <NursePanel c={c} reload={reload} />}
+      {['doctor', 'admin'].includes(role) && <DoctorPanel c={c} reload={reload} />}
 
       <section className="box">
         <h2>{t('assignments')}</h2>
