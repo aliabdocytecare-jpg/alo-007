@@ -51,9 +51,10 @@ export const schedule = ah(async (req, res) => {
   }, { onConflict: 'case_id' });
   if (error) throw httpError(500, error.message);
 
+  let tokenResult = null;
   if (is_tripartite && specialist_name && specialist_phone) {
     try {
-      await issueLink(c.id, specialist_name.trim(), specialist_phone, req.session.sub);
+      tokenResult = await issueLink(c.id, specialist_name.trim(), specialist_phone, req.session.sub);
     } catch (e) {
       console.error('Tripartite specialist link dispatch error:', e?.message);
     }
@@ -72,7 +73,11 @@ export const schedule = ah(async (req, res) => {
     title: 'Appointment Confirmed',
     body: `Case ${c.case_number}: your appointment is confirmed for ${new Date(scheduled_at).toLocaleString()}.${meet_url ? ` Video room: ${meet_url}` : ''} Open AloDoc for details.`
   });
-  res.json({ ok: true });
+  res.json({
+    ok: true,
+    review_url: tokenResult ? `/review/${tokenResult.token}` : null,
+    token: tokenResult?.token || null
+  });
 });
 
 // F-MEET-01: strict Google Meet URL validation.

@@ -132,6 +132,7 @@ api.post('/cases/:id/confirm-payment', requireRole('nurse', 'coordinator', 'admi
 api.post('/cases/:id/request-documents', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.requestDocuments);
 api.post('/cases/:id/assign', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.assign);
 api.post('/cases/:id/revoke-link', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.revokeLink);
+api.post('/cases/:id/reissue-link', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.reissueMagicLink);
 api.post('/cases/:id/cancel', requireAuth, loadCase, requireCaseAccess, cases.cancel); // WP4: patient or nurse/coordinator/admin can cancel
 api.post('/cases/:id/escalate', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.escalate);
 api.get('/staff/directory', requireRole('nurse', 'coordinator', 'admin'), cases.staffDirectory);

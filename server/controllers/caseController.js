@@ -119,6 +119,21 @@ export const revokeLink = ah(async (req, res) => {
   res.json({ ok: true });
 });
 
+// Reissue or generate new active Magic Link token for staff inspection/testing
+export const reissueMagicLink = ah(async (req, res) => {
+  const c = req.case;
+  const { data: latest } = await db.from('magic_link_tokens')
+    .select('*')
+    .eq('case_id', c.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const name = req.body.specialist_name || latest?.specialist_name || 'Specialist Consultant';
+  const phone = req.body.specialist_phone || latest?.specialist_phone || '+919787076765';
+  const { token, record } = await issueLink(c.id, name, phone, req.session.sub);
+  res.json({ ok: true, token, review_url: `/review/${token}`, expires_at: record.expires_at });
+});
+
 // BR-020 / US-CRD-010 / WP4: Patient self-service or staff cancellation.
 // Auto-releases booked hospital slots and triggers high-priority triage alerts for worsening symptoms.
 export const cancel = ah(async (req, res) => {

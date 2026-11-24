@@ -36,6 +36,7 @@ function NurseDesk({ c, reload }) {
   const [cancelReason, setCancelReason] = useState('');
   const [escNote, setEscNote] = useState('');
   const [v, setV] = useState({ blood_pressure: '', heart_rate: '', temperature: '', weight: '', height: '', spo2: '', nursing_notes: '' });
+  const [generatedLink, setGeneratedLink] = useState('');
 
   useEffect(() => { api.get('/staff/directory').then(r => setDirectory(r.data)).catch(() => {}); }, []);
 
@@ -238,15 +239,23 @@ function NurseDesk({ c, reload }) {
           <div className="row" style={{ marginTop: 10 }}>
             <button
               disabled={!schedAt}
-              onClick={() => run(() => api.post(`/cases/${c.id}/schedule`, {
-                scheduled_at: new Date(schedAt).toISOString(),
-                clinic_name: clinic.name || 'ALO Telehealth Room',
-                clinic_address: clinic.address || 'Online',
-                meet_url: meet,
-                is_tripartite: tripartite,
-                specialist_name: triSpecialist.name,
-                specialist_phone: triSpecialist.phone
-              }), 'Consultation scheduled & video room dispatched')}
+              onClick={() => run(async () => {
+                const res = await api.post(`/cases/${c.id}/schedule`, {
+                  scheduled_at: new Date(schedAt).toISOString(),
+                  clinic_name: clinic.name || 'ALO Telehealth Room',
+                  clinic_address: clinic.address || 'Online',
+                  meet_url: meet,
+                  is_tripartite: tripartite,
+                  specialist_name: triSpecialist.name,
+                  specialist_phone: triSpecialist.phone
+                });
+                if (res.data?.review_url) {
+                  const fullUrl = res.data.review_url.startsWith('http')
+                    ? res.data.review_url
+                    : window.location.origin + res.data.review_url;
+                  setGeneratedLink(fullUrl);
+                }
+              }, 'Consultation scheduled & video room dispatched')}
               style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontWeight: 600 }}
             >
               Confirm Consultation Slot
@@ -286,7 +295,24 @@ function NurseDesk({ c, reload }) {
               <option value="second_review">Second Review</option>
               <option value="follow_up">Follow-Up Review</option>
             </select>
-            <button disabled={!spec.name || !spec.phone} onClick={() => run(() => api.post(`/cases/${c.id}/reviews/dispatch`, { specialist_name: spec.name, specialist_phone: spec.phone, request_type: spec.request_type || 'fresh_case' }))}>Dispatch Review</button>
+            <button
+              disabled={!spec.name || !spec.phone}
+              onClick={() => run(async () => {
+                const res = await api.post(`/cases/${c.id}/reviews/dispatch`, {
+                  specialist_name: spec.name,
+                  specialist_phone: spec.phone,
+                  request_type: spec.request_type || 'fresh_case'
+                });
+                if (res.data?.review_url) {
+                  const fullUrl = res.data.review_url.startsWith('http')
+                    ? res.data.review_url
+                    : window.location.origin + res.data.review_url;
+                  setGeneratedLink(fullUrl);
+                }
+              }, 'Specialist review dispatched via WhatsApp')}
+            >
+              Dispatch Review
+            </button>
           </div>
         </div>
       )}
@@ -341,12 +367,105 @@ function NurseDesk({ c, reload }) {
         </div>
       </div>
 
-      {latestLink && (
-        <div style={{ marginTop: 8 }}>
-          <h3>{t('reviewStatus')}: {linkState}{latestLink.revoked_at ? ` [${t('linkRevoked')}]` : ''}</h3>
-          <p className="muted">{latestLink.specialist_name} · {latestLink.specialist_phone} · {t('expires')}: {fmtDate(latestLink.expires_at)}</p>
-          <div className="row">
-            {!latestLink.revoked_at && <button onClick={() => run(() => api.post(`/cases/${c.id}/revoke-link`))}>{t('revokeLink')}</button>}
+      {/* Active Specialist Magic Link Console (Visible whenever a link exists, or for assigned/scheduled cases) */}
+      {(generatedLink || latestLink || ['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED', 'APPOINTMENT_SCHEDULED', 'IN_PROGRESS', 'REVIEW_RECEIVED'].includes(c.status)) && (
+        <div style={{ marginTop: 14, border: '1px solid #0284c7', borderRadius: '8px', padding: 14, background: '#f0f9ff' }}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <h4 style={{ margin: 0, color: '#0369a1', display: 'flex', alignItems: 'center', gap: 6 }}>
+              🔗 <span>Active Indian Specialist Magic Link</span>
+            </h4>
+            {latestLink && (
+              <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.8rem' }}>
+                Status: {linkState} {latestLink.revoked_at ? `[${t('linkRevoked')}]` : ''}
+              </span>
+            )}
+          </div>
+
+          {latestLink && (
+            <p className="muted" style={{ margin: '6px 0 10px', fontSize: '0.85rem' }}>
+              <strong>Doctor:</strong> {latestLink.specialist_name} · <strong>WhatsApp:</strong> {latestLink.specialist_phone} · <strong>Expires:</strong> {fmtDate(latestLink.expires_at)}
+            </p>
+          )}
+
+          {generatedLink ? (
+            <div style={{ background: '#fff', border: '1px solid #bae6fd', borderRadius: 6, padding: 10, marginTop: 8 }}>
+              <div style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: 4, fontWeight: 600 }}>DIRECT SECURE URL (NO LOGIN / NO PASSWORD NEEDED):</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  readOnly
+                  value={generatedLink}
+                  style={{ flex: 1, minWidth: 260, fontFamily: 'monospace', fontSize: '0.82rem', padding: '6px 10px', background: '#f8fafc' }}
+                  onClick={e => e.target.select()}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(generatedLink);
+                    alert('Copied Magic Link to clipboard!');
+                  }}
+                  className="btn"
+                  style={{ padding: '6px 12px', fontSize: '0.85rem' }}
+                >
+                  📋 Copy Link
+                </button>
+                <a
+                  href={generatedLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn"
+                  style={{ padding: '6px 12px', fontSize: '0.85rem', background: '#0284c7', color: '#fff', textDecoration: 'none', fontWeight: 600 }}
+                >
+                  ↗ Open Specialist Review
+                </a>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                onClick={() => run(async () => {
+                  const res = await api.post(`/cases/${c.id}/reissue-link`, {});
+                  if (res.data?.review_url) {
+                    const fullUrl = res.data.review_url.startsWith('http')
+                      ? res.data.review_url
+                      : window.location.origin + res.data.review_url;
+                    setGeneratedLink(fullUrl);
+                  }
+                }, 'Specialist Magic Link ready to inspect')}
+                style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontSize: '0.85rem', padding: '6px 14px', fontWeight: 600 }}
+              >
+                🔗 Show / Open Specialist Magic Link
+              </button>
+            </div>
+          )}
+
+          <div className="row" style={{ marginTop: 10, gap: 10 }}>
+            {generatedLink && (
+              <button
+                type="button"
+                onClick={() => run(async () => {
+                  const res = await api.post(`/cases/${c.id}/reissue-link`, {});
+                  if (res.data?.review_url) {
+                    const fullUrl = res.data.review_url.startsWith('http')
+                      ? res.data.review_url
+                      : window.location.origin + res.data.review_url;
+                    setGeneratedLink(fullUrl);
+                  }
+                }, 'New active token generated')}
+                style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+              >
+                🔄 Reissue New Link
+              </button>
+            )}
+            {latestLink && !latestLink.revoked_at && (
+              <button
+                type="button"
+                onClick={() => run(() => api.post(`/cases/${c.id}/revoke-link`))}
+                style={{ fontSize: '0.8rem', padding: '4px 8px', color: '#dc2626' }}
+              >
+                {t('revokeLink')}
+              </button>
+            )}
           </div>
         </div>
       )}
