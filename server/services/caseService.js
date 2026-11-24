@@ -154,13 +154,14 @@ export async function listCasesForRole(session) {
 }
 
 async function caseBundle(c) {
-  const [docs, timeline, assigns, vitals, consultation, review, tokens, rx, patient] = await Promise.all([
+  const [docs, timeline, assigns, vitals, consultation, review, caseRevs, tokens, rx, patient] = await Promise.all([
     db.from('documents').select().eq('case_id', c.id).eq('is_deleted', false).order('created_at'),
     db.from('case_timeline').select().eq('case_id', c.id).order('created_at'),
     db.from('case_assignments').select().eq('case_id', c.id),
     db.from('vitals').select().eq('case_id', c.id).order('created_at', { ascending: false }),
     db.from('consultations').select().eq('case_id', c.id).maybeSingle(),
     db.from('international_reviews').select().eq('case_id', c.id).maybeSingle(),
+    db.from('case_reviews').select().eq('case_id', c.id).order('round_number', { ascending: true }),
     db.from('magic_link_tokens').select().eq('case_id', c.id).order('created_at', { ascending: false }),
     db.from('prescriptions').select().eq('case_id', c.id).order('created_at'),
     db.from('patients').select().eq('id', c.patient_id).maybeSingle()
@@ -180,6 +181,7 @@ async function caseBundle(c) {
     })),
     vitals: vitals.data || [], consultation: consultation.data || null,
     review: review.data || null,
+    case_reviews: caseRevs.data || [],
     // Never expose token hashes (DEC-015).
     magic_links: (tokens.data || []).map(t => ({
       id: t.id, specialist_name: t.specialist_name, specialist_phone: t.specialist_phone,
@@ -197,13 +199,32 @@ export async function getCaseForRole(c, session, lang = 'en') {
     id: c.id, case_number: c.case_number, service_type: c.service_type, service_subtype: c.service_subtype,
     specialty: c.specialty, purpose: c.purpose, reason: c.reason, history: c.history,
     status: c.status, created_at: c.created_at, updated_at: c.updated_at, version: c.version,
-    parent_case_id: c.parent_case_id, follow_up_recommended: c.follow_up_recommended, follow_up_note: c.follow_up_note
+    parent_case_id: c.parent_case_id, follow_up_recommended: c.follow_up_recommended, follow_up_note: c.follow_up_note,
+    final_report_published: !!c.final_report_published,
+    final_report_published_at: c.final_report_published_at,
+    final_report_en: c.final_report_en,
+    final_report_ar: c.final_report_ar,
+    ai_summary_status: c.ai_summary_status,
+    ai_summary_en: c.ai_summary_en,
+    ai_summary_ar: c.ai_summary_ar,
+    hospital_handoff: c.hospital_handoff
   };
 
   if (session.role === 'patient') {
-    const released = b.consultation?.released_at || b.review?.released_at;
-    const report = b.consultation?.released_at ? b.consultation.final_report
-      : b.review?.released_at ? `FINDINGS:\n${b.review.findings}\n\nRECOMMENDATION:\n${b.review.recommendation}` : null;
+    const released = !!(b.consultation?.released_at || b.review?.released_at || c.final_report_published);
+    let report = null;
+    if (b.consultation?.released_at) {
+      report = b.consultation.final_report;
+    } else if (b.review?.released_at && b.review?.findings) {
+      report = `FINDINGS:\n${b.review.findings}\n\nRECOMMENDATION:\n${b.review.recommendation}`;
+    } else if (c.final_report_published && c.final_report_en) {
+      report = c.final_report_en;
+    } else if (released && b.case_reviews?.length) {
+      const lastRev = b.case_reviews[b.case_reviews.length - 1];
+      if (lastRev.clinical_findings) {
+        report = `FINDINGS:\n${lastRev.clinical_findings}\n\nRECOMMENDATION:\n${lastRev.recommendations || lastRev.diagnostic_assessment}`;
+      }
+    }
     // F-MEET-02 / BR-023: patient sees Meet link only inside visibility window.
     let meetUrl = null, joinable = false;
     if (b.consultation?.meet_url && b.consultation.scheduled_at) {
@@ -227,7 +248,7 @@ export async function getCaseForRole(c, session, lang = 'en') {
         doctor_name: b.assignments.find(a => a.role === 'doctor')?.staff?.full_name || null,
         meet_url: meetUrl, joinable
       } : null,
-      report, report_released: !!released,
+      report, report_released: released,
       prescriptions: released ? b.prescriptions : [],
       can_follow_up: ['COMPLETED', 'FOLLOW_UP'].includes(c.status) || c.follow_up_recommended,
       can_request_service: c.status !== 'CANCELLED',
@@ -236,6 +257,7 @@ export async function getCaseForRole(c, session, lang = 'en') {
   }
 
   // Staff view (nurse / doctor / coordinator / admin)
+  // Unified ALO Nurse Desk: Nurse has full visibility to clinical reviews to release final reports
   const out = {
     ...base, patient: b.patient, documents: b.documents, timeline: b.timeline,
     assignments: b.assignments, vitals: b.vitals, prescriptions: b.prescriptions,
@@ -245,10 +267,11 @@ export async function getCaseForRole(c, session, lang = 'en') {
     sla_due_at: c.sla_due_at, owner_id: c.owner_id, owner_role: c.owner_role,
     magic_links: b.magic_links,
     workflow: computeCaseWorkflow({ ...c, ...b }, lang),
-    review: session.role === 'nurse' ? null : b.review, // 6.4: nurse has no clinical-report access
+    review: b.review,
+    case_reviews: b.case_reviews,
     consultation: b.consultation ? {
       ...b.consultation,
-      notes_draft: ['doctor', 'coordinator', 'admin'].includes(session.role) ? b.consultation.notes_draft : undefined
+      notes_draft: ['doctor', 'coordinator', 'nurse', 'admin'].includes(session.role) ? b.consultation.notes_draft : undefined
     } : null
   };
   // BR-025 / US-ADM-007: admin case access is always logged.

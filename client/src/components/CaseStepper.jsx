@@ -49,14 +49,16 @@ export default function CaseStepper({ workflow, status, compact = false }) {
             fontWeight: 600,
             padding: '4px 12px',
             borderRadius: '20px',
-            background: workflow.custodian === 'COORDINATOR' ? '#f3e8ff' : workflow.custodian === 'NURSE' ? '#fef3c7' : workflow.custodian === 'DOCTOR' ? '#e0f2fe' : '#ecfdf5',
-            color: workflow.custodian === 'COORDINATOR' ? '#7e22ce' : workflow.custodian === 'NURSE' ? '#b45309' : workflow.custodian === 'DOCTOR' ? '#0369a1' : '#047857',
+            background: ['COORDINATOR', 'NURSE', 'ALO_NURSE'].includes(workflow.custodian) ? '#ecfdf5' : workflow.custodian === 'DOCTOR' ? '#e0f2fe' : '#fef3c7',
+            color: ['COORDINATOR', 'NURSE', 'ALO_NURSE'].includes(workflow.custodian) ? '#047857' : workflow.custodian === 'DOCTOR' ? '#0369a1' : '#b45309',
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px'
           }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />
-            {lang === 'ar' ? `بانتظار: ${workflow.custodian}` : `Holding: ${workflow.custodian}`}
+            {lang === 'ar'
+              ? `بانتظار: ${['COORDINATOR', 'NURSE', 'ALO_NURSE'].includes(workflow.custodian) ? 'ممرض ألو' : workflow.custodian === 'DOCTOR' ? 'الطبيب' : 'المريض'}`
+              : `Holding: ${['COORDINATOR', 'NURSE', 'ALO_NURSE'].includes(workflow.custodian) ? 'ALO NURSE' : workflow.custodian}`}
           </div>
         )}
       </div>

@@ -163,15 +163,41 @@ export const releaseReport = ah(async (req, res) => {
   if (c.status !== 'REPORT_SUBMITTED') throw httpError(409, 'No submitted report awaiting release.');
   const { data: cons } = await db.from('consultations').select().eq('case_id', c.id).maybeSingle();
   const { data: review } = await db.from('international_reviews').select().eq('case_id', c.id).maybeSingle();
+  const { data: caseRev } = await db.from('case_reviews').select().eq('case_id', c.id).eq('status', 'submitted').order('created_at', { ascending: false }).limit(1).maybeSingle();
   const now = new Date().toISOString();
+
+  let releasedAnything = false;
   if (cons?.final_report && !cons.released_at) {
     await db.from('consultations').update({ released_at: now, released_by: req.session.sub }).eq('id', cons.id);
-  } else if (review?.status === 'SUBMITTED' && !review.released_at) {
+    releasedAnything = true;
+  }
+  if (review?.status === 'SUBMITTED' && !review.released_at) {
     await db.from('international_reviews').update({ released_at: now, released_by: req.session.sub }).eq('id', review.id);
-  } else {
+    releasedAnything = true;
+  }
+  if (caseRev) {
+    await db.from('case_reviews').update({ status: 'released', updated_at: now }).eq('id', caseRev.id);
+    releasedAnything = true;
+  }
+
+  // Update cases table flags for DEC-056 / PDF generator compatibility
+  const reportTextEn = review?.findings
+    ? `FINDINGS:\n${review.findings}\n\nRECOMMENDATION:\n${review.recommendation}`
+    : (caseRev?.clinical_findings ? `FINDINGS:\n${caseRev.clinical_findings}\n\nRECOMMENDATION:\n${caseRev.recommendations || caseRev.diagnostic_assessment}` : cons?.final_report);
+
+  await db.from('cases').update({
+    final_report_published: true,
+    final_report_published_at: now,
+    final_report_en: reportTextEn || c.final_report_en || 'Specialist consultation complete',
+    final_report_ar: c.final_report_ar || reportTextEn || 'تم إصدار التقرير الطبي للمريض',
+    updated_at: now
+  }).eq('id', c.id);
+
+  if (!releasedAnything && !c.final_report_en && !reportTextEn) {
     throw httpError(409, 'No final report or opinion found to release.');
   }
-  await transition(c.id, 'COMPLETED', { actorId: req.session.sub, actorRole: 'coordinator', note: 'Report released to patient' });
+
+  await transition(c.id, 'COMPLETED', { actorId: req.session.sub, actorRole: req.session.role || 'nurse', note: 'Report released to patient by ALO Nurse' });
   if (c.follow_up_recommended) await transition(c.id, 'FOLLOW_UP', { actorRole: 'system', note: 'Follow-up recommended by doctor' });
   await audit(req, 'REPORT_RELEASED', { resourceType: 'case', resourceId: c.id });
   await notify({ event: 'N-09', caseId: c.id, recipientType: 'patient', recipientId: c.patient_id, title: 'Medical Opinion Is Ready', body: `Case ${c.case_number}: your medical report is now available in your AloDoc portal.` });

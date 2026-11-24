@@ -44,8 +44,12 @@ function NurseDesk({ c, reload }) {
   const linkState = latestLink
     ? (latestLink.submitted_at ? t('submitted') : latestLink.draft_saved_at ? t('draftSaved') : latestLink.opened_at ? t('opened') : t('sent'))
     : null;
+  const latestCaseRev = c.case_reviews?.[c.case_reviews.length - 1];
   const reportText = c.consultation?.final_report
-    || (c.review?.status === 'SUBMITTED' ? `FINDINGS:\n${c.review.findings}\n\nRECOMMENDATION:\n${c.review.recommendation}` : null);
+    || (c.review?.status === 'SUBMITTED' ? `FINDINGS:\n${c.review.findings}\n\nRECOMMENDATION:\n${c.review.recommendation}` : null)
+    || (latestCaseRev?.clinical_findings ? `FINDINGS:\n${latestCaseRev.clinical_findings}\n\nRECOMMENDATION:\n${latestCaseRev.recommendations || latestCaseRev.diagnostic_assessment}` : null)
+    || c.final_report_en
+    || (c.status === 'REPORT_SUBMITTED' ? 'Medical specialist has submitted the opinion report. Ready for review and release.' : null);
 
   const required = REQUIRED_DOCS[c.service_type] || [];
   const have = new Set((c.documents || []).map(d => d.category));
@@ -477,14 +481,26 @@ function NurseDesk({ c, reload }) {
       )}
 
       {/* Report Preview & Final Release to Patient */}
-      {c.status === 'REPORT_SUBMITTED' && reportText && (
+      {c.status === 'REPORT_SUBMITTED' && (
         <div style={{ marginTop: 14, border: '2px solid #16a34a', borderRadius: '8px', padding: 14, background: '#f0fdf4' }}>
-          <h3 style={{ margin: '0 0 8px', color: '#166534' }}>📄 Final Medical Opinion Report Preview</h3>
-          <pre className="report" style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '12px' }}>{reportText}</pre>
-          <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: '0 0 8px', color: '#166534', display: 'flex', alignItems: 'center', gap: 6 }}>
+              📄 <span>Final Medical Opinion Report Preview</span>
+            </h3>
+            <span className="badge" style={{ background: '#dcfce7', color: '#166534', fontWeight: 600 }}>
+              Status: Ready for Release
+            </span>
+          </div>
+          <p className="muted" style={{ margin: '4px 0 10px', fontSize: '0.85rem' }}>
+            The global specialist has submitted their clinical findings. Please review the report below before releasing it to the patient.
+          </p>
+          <pre className="report" style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '12px', whiteSpace: 'pre-wrap' }}>
+            {reportText || 'No report text available'}
+          </pre>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
             <button
-              style={{ background: '#16a34a', borderColor: '#16a34a', color: '#fff', fontWeight: 700, padding: '10px 22px', fontSize: '1rem', borderRadius: '6px' }}
-              onClick={() => { if (window.confirm(t('confirmSubmit'))) run(() => api.post(`/cases/${c.id}/release`)); }}
+              style={{ background: '#16a34a', borderColor: '#16a34a', color: '#fff', fontWeight: 700, padding: '10px 22px', fontSize: '1rem', borderRadius: '6px', cursor: 'pointer' }}
+              onClick={() => { if (window.confirm(t('confirmSubmit') || 'Confirm release report to patient?')) run(() => api.post(`/cases/${c.id}/release`)); }}
             >
               ✓ Release Final Report to Patient
             </button>
@@ -492,9 +508,34 @@ function NurseDesk({ c, reload }) {
               className="btn"
               href={`/api/v1/cases/${c.id}/report/pdf`}
               download={`Medical_Report_${c.case_number}.pdf`}
-              style={{ textDecoration: 'none', display: 'inline-block' }}
+              style={{ textDecoration: 'none', display: 'inline-block', padding: '10px 16px' }}
             >
-              Download PDF Report
+              📥 Download PDF Report
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Completed & Delivered Report Badge & Preview for Staff */}
+      {['COMPLETED', 'FOLLOW_UP'].includes(c.status) && (
+        <div style={{ marginTop: 14, border: '1px solid #86efac', borderRadius: '8px', padding: 14, background: '#f0fdf4' }}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <h4 style={{ margin: 0, color: '#166534', display: 'flex', alignItems: 'center', gap: 6 }}>
+              ✓ <span>Medical Report Released & Delivered to Patient</span>
+            </h4>
+            <span className="badge" style={{ background: '#dcfce7', color: '#166534', fontWeight: 600 }}>COMPLETED</span>
+          </div>
+          <pre className="report" style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '12px', marginTop: 10, whiteSpace: 'pre-wrap' }}>
+            {reportText || c.final_report_en || 'Report released to patient'}
+          </pre>
+          <div style={{ marginTop: 10 }}>
+            <a
+              className="btn"
+              href={`/api/v1/cases/${c.id}/report/pdf`}
+              download={`Medical_Report_${c.case_number}.pdf`}
+              style={{ textDecoration: 'none', display: 'inline-block', padding: '8px 14px' }}
+            >
+              📥 Download PDF Report
             </a>
           </div>
         </div>

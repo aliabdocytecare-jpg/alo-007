@@ -86,7 +86,7 @@ export function computeCaseWorkflow(c, lang = 'en') {
     stage = 4;
     stageLabelEn = 'Opinion Prepared';
     stageLabelAr = 'تم إعداد الرأي الطبي';
-    custodian = 'COORDINATOR';
+    custodian = 'ALO_NURSE';
     nextActionEn = 'Doctor submitted opinion 👉 Review & release final report to patient';
     nextActionAr = 'الطبيب سلم الرأي الطبي 👉 مراجعة واعتماد التقرير للمريض';
   } else if (c.status === 'COMPLETED') {
