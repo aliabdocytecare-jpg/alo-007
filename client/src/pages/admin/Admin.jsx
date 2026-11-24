@@ -9,55 +9,133 @@ function StaffTab() {
   const { t } = useI18n();
   const { data, err, reload } = useAsync(() => api.get('/admin/staff').then(r => r.data));
   const { data: specData } = useAsync(() => api.get('/specialties').then(r => r.data || []));
-  const [form, setForm] = useState({ full_name: '', role: 'nurse', email: '', phone: '', password: '', specialty: '' });
+  const [form, setForm] = useState({ full_name: '', role: 'nurse', email: '', phone: '', specialty: '' });
   const [state, setState] = useState({ err: '', ok: '' });
+  const [busy, setBusy] = useState(false);
+
   const create = async () => {
     setState({ err: '', ok: '' });
+    if (!form.full_name?.trim() || !form.email?.trim()) {
+      setState({ err: 'Full name and email are required.', ok: '' });
+      return;
+    }
+    setBusy(true);
     try {
       const payload = { ...form };
       if (payload.role === 'doctor' && !payload.specialty && specData?.length) {
         payload.specialty = specData[0].name_en;
       }
       await api.post('/admin/staff', payload);
-      setState({ ok: 'OK', err: '' });
-      setForm({ full_name: '', role: 'nurse', email: '', phone: '', password: '', specialty: '' });
+      setState({ ok: `Invitation email sent to ${payload.email}. Staff member can now activate their account.`, err: '' });
+      setForm({ full_name: '', role: 'nurse', email: '', phone: '', specialty: '' });
       reload();
     }
     catch (e) { setState({ err: errMsg(e), ok: '' }); }
+    finally { setBusy(false); }
   };
-  const toggle = async s => { await api.patch(`/admin/staff/${s.id}/active`, { is_active: !s.is_active }); reload(); };
+
+  const toggle = async s => {
+    try {
+      await api.patch(`/admin/staff/${s.id}/active`, { is_active: !s.is_active });
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+    }
+  };
+
+  const resendInvite = async s => {
+    setState({ err: '', ok: '' });
+    try {
+      const res = await api.post(`/admin/staff/${s.id}/resend-invite`);
+      setState({ ok: res.data?.message || `Activation email resent to ${s.email}.`, err: '' });
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+    }
+  };
+
+  const deleteStaffMember = async s => {
+    const msg = `Are you sure you want to permanently delete staff member "${s.full_name}" (${s.email})?\n\nThis will remove their profile from the database. This action cannot be undone.`;
+    if (!window.confirm(msg)) return;
+    setState({ err: '', ok: '' });
+    try {
+      const res = await api.delete(`/admin/staff/${s.id}`);
+      setState({ ok: res.data?.message || 'Staff member permanently deleted.', err: '' });
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+    }
+  };
+
   return (
     <div>
       <Msg err={err || state.err} ok={state.ok} />
       <table>
-        <thead><tr><th>{t('name')}</th><th>{t('role')}</th><th>{t('email')}</th><th>{t('specialty')}</th><th>{t('status')}</th><th>{t('actions')}</th></tr></thead>
+        <thead>
+          <tr>
+            <th>{t('name')}</th>
+            <th>{t('role')}</th>
+            <th>{t('email')}</th>
+            <th>{t('specialty')}</th>
+            <th>{t('status')}</th>
+            <th>{t('emailVerification')}</th>
+            <th>{t('actions')}</th>
+          </tr>
+        </thead>
         <tbody>
           {(data || []).map(s => (
             <tr key={s.id}>
-              <td>{s.full_name}</td><td>{t(s.role)}</td><td dir="ltr">{s.email}</td><td>{s.specialty || '—'}</td>
+              <td>{s.full_name}</td>
+              <td>{t(s.role)}</td>
+              <td dir="ltr">{s.email}</td>
+              <td>{s.specialty || '—'}</td>
               <td>{s.is_active ? t('active') : t('inactive')}</td>
-              <td><button onClick={() => toggle(s)}>{s.is_active ? t('deactivate') : t('activate')}</button></td>
+              <td>
+                {s.email_verified ? (
+                  <span style={{ color: '#059669', backgroundColor: '#ecfdf5', padding: '3px 8px', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 600 }}>
+                    {t('verified')}
+                  </span>
+                ) : (
+                  <span style={{ color: '#d97706', backgroundColor: '#fffbeb', padding: '3px 8px', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 600 }}>
+                    {t('pendingActivation')}
+                  </span>
+                )}
+              </td>
+              <td>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button onClick={() => toggle(s)} style={{ padding: '4px 8px', fontSize: '0.85rem' }}>
+                    {s.is_active ? t('deactivate') : t('activate')}
+                  </button>
+                  {!s.email_verified && (
+                    <button onClick={() => resendInvite(s)} style={{ padding: '4px 8px', fontSize: '0.85rem' }} title="Resend invitation email">
+                      {t('resendInvite')}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => deleteStaffMember(s)}
+                    style={{ padding: '4px 8px', fontSize: '0.85rem', color: '#dc2626', borderColor: '#fca5a5', backgroundColor: '#fef2f2' }}
+                    title="Permanently delete staff user"
+                  >
+                    {t('deleteStaff')}
+                  </button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <h2>{t('createStaff')}</h2>
+      <h2>{t('inviteStaff')}</h2>
+      <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '1rem', marginTop: '-0.25rem' }}>
+        {t('inviteStaffNotice')}
+      </p>
       <div className="grid2">
-        <Field label={t('fullName')}><input value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} /></Field>
+        <Field label={t('fullName')}><input value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} placeholder="e.g. Dr. Sarah Jenkins" /></Field>
         <Field label={t('role')}>
           <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
             {['nurse', 'coordinator', 'doctor', 'admin'].map(r => <option key={r} value={r}>{t(r)}</option>)}
           </select>
         </Field>
-        <Field label={t('email')}><input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} dir="ltr" /></Field>
-        <Field label={t('phone')}><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} dir="ltr" /></Field>
-        <Field label={t('password')}>
-          <PasswordInput
-            value={form.password}
-            onChange={e => setForm({ ...form, password: e.target.value })}
-            dir="ltr"
-          />
-        </Field>
+        <Field label={t('email')}><input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} dir="ltr" placeholder="staff@hospital.com" /></Field>
+        <Field label={t('phone')}><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} dir="ltr" placeholder="+9665XXXXXXXX" /></Field>
         {form.role === 'doctor' ? (
           <Field label={t('specialty')}>
             <select
@@ -70,10 +148,10 @@ function StaffTab() {
             </select>
           </Field>
         ) : (
-          <Field label={t('specialty')}><input value={form.specialty} onChange={e => setForm({ ...form, specialty: e.target.value })} /></Field>
+          <Field label={t('specialty')}><input value={form.specialty} onChange={e => setForm({ ...form, specialty: e.target.value })} placeholder="Optional" /></Field>
         )}
       </div>
-      <button onClick={create}>{t('createStaff')}</button>
+      <button onClick={create} disabled={busy}>{busy ? '...' : `+ ${t('inviteStaff')}`}</button>
     </div>
   );
 }

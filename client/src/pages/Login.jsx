@@ -55,7 +55,13 @@ export default function Login() {
       const { data } = await api.post('/auth/staff-login', staff);
       await refresh();
       nav(data.role === 'admin' ? '/admin' : '/staff', { replace: true });
-    } catch (e) { setErr(errMsg(e)); }
+    } catch (e) {
+      if (e.response?.data?.code === 'EMAIL_NOT_VERIFIED') {
+        setErr(e.response?.data?.error || 'Email not verified. Please activate your account via the invitation link sent to your email.');
+      } else {
+        setErr(errMsg(e));
+      }
+    }
     setBusy(false);
   };
 

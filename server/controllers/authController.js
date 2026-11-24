@@ -1,4 +1,5 @@
 // F-AUTH-01/02/03 + Part 8.1 edge cases. Mock OTP behind ENABLE_MOCK_AUTH (DEC-007).
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db, MOCK_AUTH } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
@@ -6,6 +7,7 @@ import { issueSession, COOKIE, PATIENT_TTL, STAFF_TTL } from '../middleware/auth
 import { notifyAdmins } from '../services/notificationService.js';
 import { getWhatsAppConfig, whatsappMode, sendOtpTemplate, otpLangFor } from '../services/whatsappService.js';
 
+const PW_RE = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{10,}$/;
 const otpStore = new Map();   // phone -> { code, expiresAt, attempts, lockedUntil, resends[] }
 const staffFails = new Map(); // email -> { count, lockedUntil }
 const PHONE_RE = /^\+[1-9]\d{7,14}$/;
@@ -140,6 +142,12 @@ export const staffLogin = ah(async (req, res) => {
   staffFails.set(key, f);
   if (f.lockedUntil > Date.now()) throw httpError(423, 'Account temporarily locked. Try again in 15 minutes.', 'ACCOUNT_LOCKED');
   const { data: s } = await db.from('staff_users').select().eq('email', key).maybeSingle();
+
+  // DEC-067: Strict email verification gate — unverified accounts cannot sign in
+  if (s && s.email_verified === false) {
+    throw httpError(403, 'Email not verified. Please activate your account via the invitation link sent to your email.', 'EMAIL_NOT_VERIFIED');
+  }
+
   const ok = s && s.is_active && await bcrypt.compare(password || '', s.password_hash);
   if (!ok) {
     f.count += 1;
@@ -159,6 +167,75 @@ export const staffLogin = ah(async (req, res) => {
       role: s.role,
       kind: 'staff',
       full_name: s.full_name,
+      hospital_id: s.hospital_id || null
+    }
+  });
+});
+
+// DEC-067: Validate staff account activation token
+export const validateActivationToken = ah(async (req, res) => {
+  const { token } = req.query;
+  if (!token) throw httpError(400, 'Activation token is required.', 'MISSING_TOKEN');
+  const tokenHash = crypto.createHash('sha256').update(String(token).trim()).digest('hex');
+  const { data: s } = await db.from('staff_users')
+    .select('id, email, full_name, role, specialty, activation_expires_at, email_verified')
+    .eq('activation_token_hash', tokenHash)
+    .maybeSingle();
+
+  if (!s) throw httpError(404, 'Invalid or expired activation link.', 'INVALID_TOKEN');
+  if (s.email_verified) throw httpError(400, 'This account is already verified. Please sign in.', 'ALREADY_ACTIVATED');
+  if (new Date(s.activation_expires_at).getTime() < Date.now()) {
+    throw httpError(410, 'This invitation link has expired. Please contact your Super Admin to resend your invite.', 'TOKEN_EXPIRED');
+  }
+  res.json({ ok: true, staff: { email: s.email, full_name: s.full_name, role: s.role, specialty: s.specialty } });
+});
+
+// DEC-067: Complete staff account activation and set confidential password
+export const completeActivation = ah(async (req, res) => {
+  const { token, password, confirm_password } = req.body;
+  if (!token) throw httpError(400, 'Activation token is required.', 'MISSING_TOKEN');
+  if (!password || !confirm_password) throw httpError(400, 'Password and confirmation are required.', 'PASSWORD_REQUIRED');
+  if (password !== confirm_password) throw httpError(400, 'Passwords do not match.', 'PASSWORD_MISMATCH');
+  if (!PW_RE.test(password)) {
+    throw httpError(400, 'Password must be at least 10 characters with 1 uppercase letter, 1 number, and 1 special character.', 'PASSWORD_WEAK');
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(String(token).trim()).digest('hex');
+  const { data: s } = await db.from('staff_users')
+    .select('id, email, full_name, role, hospital_id, activation_expires_at, email_verified')
+    .eq('activation_token_hash', tokenHash)
+    .maybeSingle();
+
+  if (!s) throw httpError(404, 'Invalid or expired activation link.', 'INVALID_TOKEN');
+  if (new Date(s.activation_expires_at).getTime() < Date.now()) {
+    throw httpError(410, 'This invitation link has expired. Please contact your Super Admin to resend.', 'TOKEN_EXPIRED');
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const { error } = await db.from('staff_users').update({
+    password_hash: passwordHash,
+    email_verified: true,
+    email_verified_at: new Date().toISOString(),
+    activation_token_hash: null,
+    activation_expires_at: null,
+    is_active: true
+  }).eq('id', s.id);
+
+  if (error) throw httpError(500, error.message);
+
+  await audit(req, 'STAFF_ACCOUNT_ACTIVATED', { resourceType: 'staff', resourceId: s.id, detail: { email: s.email } });
+
+  const sessionToken = issueSession(res, { sub: s.id, role: s.role, kind: 'staff', hospital_id: s.hospital_id || null }, STAFF_TTL);
+  res.json({
+    ok: true,
+    role: s.role,
+    token: sessionToken,
+    user: {
+      id: s.id,
+      role: s.role,
+      kind: 'staff',
+      full_name: s.full_name,
+      email: s.email,
       hospital_id: s.hospital_id || null
     }
   });

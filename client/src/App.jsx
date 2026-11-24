@@ -4,6 +4,7 @@ import { api } from './lib/api';
 import { useAuth } from './lib/auth';
 import { useI18n } from './lib/i18n';
 import Login from './pages/Login';
+import ActivateAccount from './pages/auth/ActivateAccount';
 import Home from './pages/patient/Home';
 import Book from './pages/patient/Book';
 import MyCases from './pages/patient/MyCases';
@@ -102,6 +103,7 @@ export default function App() {
       <Routes>
         {/* Public & Specialist Routes (No Auth Required) */}
         <Route path="/login" element={<Login />} />
+        <Route path="/activate-account" element={<ActivateAccount />} />
         <Route path="/kiosk" element={<Kiosk />} />
         <Route path="/screen" element={<WaitingScreen />} />
         <Route path="/screen/:pin" element={<WaitingScreen />} />

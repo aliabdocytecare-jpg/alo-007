@@ -104,6 +104,8 @@ api.post('/auth/send-otp', authLimiter, auth.sendOtp);
 api.post('/auth/verify-otp', authLimiter, auth.verifyOtp);
 api.post('/auth/register', authLimiter, auth.register);
 api.post('/auth/staff-login', authLimiter, auth.staffLogin);
+api.get('/auth/activate-validate', auth.validateActivationToken);
+api.post('/auth/activate-complete', authLimiter, auth.completeActivation);
 api.get('/auth/me', auth.me);
 api.patch('/auth/profile', requireRole('patient'), auth.updateProfile);
 api.post('/auth/logout', auth.logout);
@@ -179,7 +181,9 @@ api.post('/cases/:id/refer-to-hospital', requireRole('coordinator', 'admin', 'nu
 // ---- ALO Admin (US-ADM) ----
 api.get('/admin/staff', requireRole('admin'), admin.listStaff);
 api.post('/admin/staff', requireRole('admin'), admin.createStaff);
+api.post('/admin/staff/:id/resend-invite', requireRole('admin'), admin.resendStaffInvite);
 api.patch('/admin/staff/:id/active', requireRole('admin'), admin.setStaffActive);
+api.delete('/admin/staff/:id', requireRole('admin'), admin.deleteStaff);
 api.get('/admin/formulary', requireRole('admin'), admin.listFormularyAdmin);
 api.post('/admin/formulary', requireRole('admin'), admin.createDrug);
 api.patch('/admin/formulary/:id', requireRole('admin'), admin.updateDrug);

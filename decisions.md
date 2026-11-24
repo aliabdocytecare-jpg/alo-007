@@ -524,6 +524,41 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Verification:** Created test suite `server/scripts/test-phase10-enhancements.mjs` verifying public specialties listing, admin listing, RBAC 403 enforcement, creation, duplicate rejection (409), and status deactivation (100% passing checks). Client compiled with 0 warnings/errors via `vite build` in 1.67s.
 - **Reference:** DEC-004, DEC-056, DEC-061, `client/src/components/ui.jsx`, `client/src/pages/hospital/HospitalDashboard.jsx`, `server/scripts/test-phase10-enhancements.mjs`.
 
+## DEC-067 — SMTP Staff Email Invitation, Self-Service Account Activation & Staff Deletion
+- **Decision:** Implemented industry-standard staff onboarding (Option A), custom SMTP email delivery service, tokenized activation with self-service confidential password setting, strict email verification login gates, and permanent staff deletion with administrative lockout safeguards:
+  1. Secure Staff Invitation Flow (Option A - Industry Best Practice):
+     - Super Admin provisions staff by entering Full Name, Role, Email, Phone, and Specialty (for doctors).
+     - Administrators no longer set passwords for staff members, ensuring zero plain-text password sharing and strict credential confidentiality.
+     - System creates account with `password_hash = 'PENDING_ACTIVATION'`, generates a single-use 32-byte cryptographic token (SHA-256 hash stored in DB, expires in 24 hours), and sets `email_verified = false`.
+  2. Custom SMTP Mail Service (`server/services/mailService.js`):
+     - Built custom mail service using `nodemailer` connected to `mail.salemcctv.com:465` (SSL).
+     - Supports bilingual (English and Arabic RTL) responsive HTML invitation email templates with AloDoc branding, action buttons, security notices, and raw link fallbacks.
+     - Connection pooling with automatic reconnection and fallback audit logging.
+     - Created safe test utility `server/scripts/test-email.mjs` allowing administrators to test delivery without sending unsolicited emails.
+  3. Tokenized Account Activation (`/activate-account?token=...`):
+     - Created `client/src/pages/auth/ActivateAccount.jsx` mounted in `client/src/App.jsx`.
+     - Validates token on mount via `GET /api/v1/auth/activate-validate?token=...`.
+     - Displays staff profile and requires double password entry (`password` and `confirm_password`) with the `PasswordInput` SVG eye visibility toggle.
+     - Real-time password complexity checklist enforcement (10+ characters, 1 uppercase, 1 digit, 1 special character, and matching confirmation).
+     - Submits to `POST /api/v1/auth/activate-complete`, hashes password with bcrypt (10 rounds), marks `email_verified = true`, revokes the token, logs `STAFF_ACCOUNT_ACTIVATED` audit event, and issues an authenticated session JWT.
+  4. Strict Email Verification Login Gate:
+     - Updated `staffLogin` in `server/controllers/authController.js` to block unverified staff accounts with 403 `EMAIL_NOT_VERIFIED`.
+     - Frontend `Login.jsx` displays a clear user-facing alert informing staff to activate via the link sent to their email.
+  5. Permanent Staff Deletion with Guardrails (`DELETE /api/v1/admin/staff/:id`):
+     - Super Admins can permanently delete a staff member from the database.
+     - Built-in guardrails prevent self-deletion (`CANNOT_DELETE_SELF`) and protect against deleting the last remaining platform admin (`LAST_ADMIN`).
+     - Cleans up associated case assignments, case ownerships, and unread notifications before deletion.
+     - Safely returns a 409 message if foreign key constraints for historical clinical notes prevent permanent deletion, advising deactivation instead.
+  6. Admin Management UI Enhancements:
+     - Updated `StaffTab` in `client/src/pages/admin/Admin.jsx` with an `emailVerification` column displaying `Verified` (green) and `Pending Activation` (amber) badges.
+     - Added `Resend Invite` button for pending staff members.
+     - Added `Delete` button with browser confirmation dialog and error/success messaging.
+  7. Database Migration:
+     - `supabase/migrations/20261124000001_staff_email_verification.sql` added `email_verified`, `activation_token_hash`, `activation_expires_at`, and `email_verified_at` columns, and backfilled existing Super Admins with `email_verified = true`.
+- **Verification:** Applied migration to Supabase DB, passed `preflight.mjs` (13/13 passing checks), compiled frontend via `npm run build` with zero errors (120 modules in 3.44s), verified SMTP SSL handshake to `mail.salemcctv.com:465`.
+- **Reference:** DEC-004, DEC-045, DEC-066, `server/services/mailService.js`, `client/src/pages/auth/ActivateAccount.jsx`, `server/scripts/test-email.mjs`.
+
+
 
 
 

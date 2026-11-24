@@ -1,7 +1,9 @@
 // Admin domain — US-ADM-001..007, BR-018/022/026/030. Plus notifications for all roles.
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db, MOCK_WHATSAPP } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
+import { sendStaffActivationEmail } from '../services/mailService.js';
 import { getWhatsAppConfig, whatsappMode, isConfigured, sendOtpTemplate, listTemplates, validateConfiguredTemplates } from '../services/whatsappService.js';
 
 const PW_RE = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{10,}$/; // F-AUTH-03 policy
@@ -15,21 +17,126 @@ export const listStaff = ah(async (req, res) => {
   res.json((data || []).map(({ password_hash, ...s }) => s));
 });
 
-// BR-030: staff created only by admin. DEC-010: initial password set by admin.
+// DEC-067: Staff account creation via secure invitation email (Option A - Industry Best Practice)
 export const createStaff = ah(async (req, res) => {
-  const { full_name, role, email, phone, password, specialty } = req.body;
-  if (!full_name?.trim() || !email?.trim()) throw httpError(400, 'Full name and email are required.');
-  if (!['nurse', 'coordinator', 'doctor', 'admin'].includes(role)) throw httpError(400, 'Invalid role.');
-  if (!PW_RE.test(password || '')) throw httpError(400, 'Password must be at least 10 characters with 1 uppercase letter, 1 number, and 1 special character.');
+  const { full_name, role, email, phone, specialty } = req.body;
+  if (!full_name?.trim() || !email?.trim()) throw httpError(400, 'Full name and email are required.', 'INVALID_INPUT');
+  const cleanEmail = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) throw httpError(400, 'Enter a valid email address.', 'INVALID_EMAIL');
+  if (!['nurse', 'coordinator', 'doctor', 'admin'].includes(role)) throw httpError(400, 'Invalid staff role.', 'INVALID_ROLE');
+
+  // Check for duplicate staff email
+  const { data: existing } = await db.from('staff_users').select('id, email, email_verified').eq('email', cleanEmail).maybeSingle();
+  if (existing) {
+    throw httpError(409, 'A staff account with this email already exists.', 'EMAIL_EXISTS');
+  }
+
+  // Generate 32-byte cryptographic token (24-hour expiration)
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
   const { data, error } = await db.from('staff_users').insert({
-    full_name: full_name.trim(), role, email: email.trim().toLowerCase(),
-    phone: phone || null, specialty: specialty || null,
-    password_hash: await bcrypt.hash(password, 10)
+    full_name: full_name.trim(),
+    role,
+    email: cleanEmail,
+    phone: phone?.trim() || null,
+    specialty: specialty || null,
+    password_hash: 'PENDING_ACTIVATION',
+    email_verified: false,
+    activation_token_hash: tokenHash,
+    activation_expires_at: expiresAt,
+    is_active: true
   }).select().single();
-  if (error) throw httpError(409, 'A staff account with this email already exists.');
-  await audit(req, 'STAFF_CREATED', { resourceType: 'staff', resourceId: data.id, detail: { role, email: data.email } });
-  const { password_hash, ...safe } = data;
+
+  if (error) throw httpError(500, error.message);
+
+  // Send invitation email via SMTP
+  try {
+    await sendStaffActivationEmail({
+      to: cleanEmail,
+      fullName: full_name.trim(),
+      role,
+      token: rawToken
+    });
+  } catch (mailErr) {
+    console.error('[MailService] Failed to send activation email:', mailErr.message);
+  }
+
+  await audit(req, 'STAFF_INVITED', { resourceType: 'staff', resourceId: data.id, detail: { role, email: data.email } });
+  const { password_hash, activation_token_hash, ...safe } = data;
   res.status(201).json(safe);
+});
+
+// Resend staff invitation email
+export const resendStaffInvite = ah(async (req, res) => {
+  const { id } = req.params;
+  const { data: s } = await db.from('staff_users').select().eq('id', id).maybeSingle();
+  if (!s) throw httpError(404, 'Staff account not found.', 'STAFF_NOT_FOUND');
+  if (s.email_verified) throw httpError(400, 'This staff account is already verified and active.', 'ALREADY_VERIFIED');
+
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+
+  const { error } = await db.from('staff_users').update({
+    activation_token_hash: tokenHash,
+    activation_expires_at: expiresAt
+  }).eq('id', id);
+
+  if (error) throw httpError(500, error.message);
+
+  try {
+    await sendStaffActivationEmail({
+      to: s.email,
+      fullName: s.full_name,
+      role: s.role,
+      token: rawToken
+    });
+  } catch (mailErr) {
+    console.error('[MailService] Failed to resend activation email:', mailErr.message);
+    throw httpError(500, `Failed to send email: ${mailErr.message}`);
+  }
+
+  await audit(req, 'STAFF_INVITE_RESENT', { resourceType: 'staff', resourceId: id, detail: { email: s.email } });
+  res.json({ ok: true, message: `Activation invitation resent to ${s.email}` });
+});
+
+// DEC-067: Permanently delete a staff account from database
+export const deleteStaff = ah(async (req, res) => {
+  const { id } = req.params;
+  if (id === req.session.sub) {
+    throw httpError(400, 'Cannot delete your own admin account (lockout protection).', 'CANNOT_DELETE_SELF');
+  }
+
+  const { data: target } = await db.from('staff_users').select('id, email, full_name, role').eq('id', id).maybeSingle();
+  if (!target) throw httpError(404, 'Staff member not found.', 'STAFF_NOT_FOUND');
+
+  // Lockout protection: Never delete the last active admin
+  if (target.role === 'admin') {
+    const { data: admins } = await db.from('staff_users').select('id').eq('role', 'admin');
+    const otherAdmins = (admins || []).filter(a => a.id !== id);
+    if (otherAdmins.length === 0) {
+      throw httpError(409, 'Cannot delete the last admin account on the platform.', 'LAST_ADMIN');
+    }
+  }
+
+  // Clean up references and assignments
+  await db.from('case_assignments').delete().eq('staff_id', id);
+  await db.from('cases').update({ owner_id: null, owner_role: null }).eq('owner_id', id);
+  await db.from('notifications').delete().eq('recipient_id', id);
+
+  const { error } = await db.from('staff_users').delete().eq('id', id);
+  if (error) {
+    // If foreign key constraint is violated (e.g. historical legal clinical notes)
+    if (error.code === '23503') {
+      throw httpError(409, 'This staff member is linked to historical medical records and cannot be permanently deleted. Please use Deactivate instead.', 'STAFF_HAS_RECORDS');
+    }
+    throw httpError(500, error.message);
+  }
+
+  await audit(req, 'STAFF_DELETED', { resourceType: 'staff', resourceId: id, detail: { email: target.email, full_name: target.full_name } });
+  res.json({ ok: true, message: `Staff member ${target.full_name} (${target.email}) was permanently deleted.` });
 });
 
 // US-ADM-001 AC3: deactivate without deleting.
