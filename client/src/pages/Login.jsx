@@ -16,6 +16,11 @@ export default function Login() {
   const [otpSent, setOtpSent] = useState(false);
   const [exists, setExists] = useState(false);
   const [mock, setMock] = useState(false);
+  const [patientMode, setPatientMode] = useState('phone'); // 'phone' | 'password' | 'otp' | 'set_password'
+  const [patientPassword, setPatientPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [patientName, setPatientName] = useState('');
   const [reg, setReg] = useState({ full_name: '', dob: '', gender: '', nationality: '', email: '' });
   const [staff, setStaff] = useState({ email: '', password: '' });
   const [forgotMode, setForgotMode] = useState(false);
@@ -32,38 +37,113 @@ export default function Login() {
     return <Navigate to={session.kind === 'patient' ? '/' : hospId ? '/hospital' : session.role === 'admin' ? '/admin' : '/staff'} replace />;
   }
 
-  const sendOtp = async () => {
+  const handleContinue = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!phone.trim()) return;
     setBusy(true); setErr('');
     try {
       const trimmedPhone = phone.trim();
-      const { data } = await api.post('/auth/send-otp', { phone: trimmedPhone });
+      const { data } = await api.post('/auth/check-phone', { phone: trimmedPhone });
+      if (data.phone) setPhone(data.phone);
+      setExists(data.exists);
+      setPatientName(data.name || '');
+      if (data.exists && data.hasPassword) {
+        setPatientMode('password');
+      } else {
+        await triggerSendOtp(data.phone || trimmedPhone, data.exists);
+      }
+    } catch (error) {
+      setErr(errMsg(error));
+    }
+    setBusy(false);
+  };
+
+  const triggerSendOtp = async (targetPhone, patientExists) => {
+    setBusy(true); setErr('');
+    try {
+      const p = targetPhone || phone.trim();
+      const { data } = await api.post('/auth/send-otp', { phone: p });
       setOtpSent(true);
-      // DEC-071: Robustly resolve patient existence (supports both data.exists and !data.isNew)
-      const patientExists = data.exists !== undefined ? Boolean(data.exists) : !data.isNew;
-      setExists(patientExists);
+      const isEx = patientExists !== undefined ? patientExists : (data.exists !== undefined ? Boolean(data.exists) : !data.isNew);
+      setExists(isEx);
       if (data.phone) setPhone(data.phone);
       setMock(data.mock);
-    } catch (e) { setErr(errMsg(e)); }
+      setPatientMode('otp');
+    } catch (error) {
+      setErr(errMsg(error));
+    }
     setBusy(false);
+  };
+
+  const loginWithPassword = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!patientPassword) {
+      setErr('Please enter your password');
+      return;
+    }
+    setBusy(true); setErr('');
+    try {
+      await api.post('/auth/patient-login', { phone: phone.trim(), password: patientPassword });
+      await refresh();
+      nav('/', { replace: true });
+    } catch (error) {
+      setErr(errMsg(error));
+    }
+    setBusy(false);
+  };
+
+  const savePasswordAndProceed = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      setErr('Password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setErr('Passwords do not match');
+      return;
+    }
+    setBusy(true); setErr('');
+    try {
+      await api.post('/auth/set-password', {
+        password: newPassword,
+        phone: phone.trim(),
+        otp
+      });
+      await refresh();
+      nav('/', { replace: true });
+    } catch (error) {
+      setErr(errMsg(error));
+    }
+    setBusy(false);
+  };
+
+  const skipPasswordAndProceed = async () => {
+    await refresh();
+    nav('/', { replace: true });
   };
 
   const finish = async () => {
     setBusy(true); setErr('');
     try {
       const trimmedPhone = phone.trim();
+      let res;
       if (exists) {
-        await api.post('/auth/verify-otp', { phone: trimmedPhone, otp });
+        res = await api.post('/auth/verify-otp', { phone: trimmedPhone, otp });
       } else {
         try {
-          await api.post('/auth/register', { phone: trimmedPhone, otp, ...reg });
+          res = await api.post('/auth/register', { phone: trimmedPhone, otp, ...reg });
         } catch (regErr) {
-          // DEC-071: Fallback safety net — if account already exists (409), automatically verify OTP and sign in
           if (regErr.response?.status === 409 || regErr.response?.data?.code === 'ACCOUNT_EXISTS') {
-            await api.post('/auth/verify-otp', { phone: trimmedPhone, otp });
+            res = await api.post('/auth/verify-otp', { phone: trimmedPhone, otp });
           } else {
             throw regErr;
           }
         }
+      }
+      if (!res.data?.hasPassword) {
+        setPatientMode('set_password');
+        setBusy(false);
+        return;
       }
       await refresh();
       nav('/', { replace: true });
@@ -129,7 +209,7 @@ export default function Login() {
         <button onClick={toggle}>{t('language')}</button>
       </div>
       <div className="tabs">
-        <button className={tab === 'patient' ? 'active' : ''} onClick={() => { setTab('patient'); setErr(''); setForgotMode(false); }}>{t('patientLogin')}</button>
+        <button className={tab === 'patient' ? 'active' : ''} onClick={() => { setTab('patient'); setErr(''); setForgotMode(false); setPatientMode('phone'); setPatientPassword(''); setNewPassword(''); setConfirmPassword(''); }}>{t('patientLogin')}</button>
         <button className={tab === 'staff' ? 'active' : ''} onClick={() => { setTab('staff'); setErr(''); setForgotMode(false); }}>{t('staffLogin')}</button>
         <button className={tab === 'hospital' ? 'active' : ''} onClick={() => { setTab('hospital'); setErr(''); }}>Hospital Clinic (OTP)</button>
       </div>
@@ -165,20 +245,110 @@ export default function Login() {
       )}
       {tab === 'patient' && (
         <section className="box">
-          <Field label={t('phone')}>
-            <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+9665XXXXXXXX" dir="ltr" disabled={otpSent} />
-          </Field>
-          {!otpSent && <p className="muted" style={{ marginTop: 4 }}>{t('phoneHint')}</p>}
-          {!otpSent && <div className="row" style={{ marginTop: 10 }}><button onClick={sendOtp} disabled={busy || !phone}>{t('sendOtp')}</button></div>}
-          {otpSent && (
-            <>
-              {/* DEC-043: make the register-vs-sign-in state explicit — new patients must register. */}
-              <h2>{exists ? t('returningPatientHeading') : t('newPatientHeading')}</h2>
-              {!exists && <p className="muted">{t('newPatientHint')}</p>}
-              {mock && <p className="muted">{t('mockHint')}</p>}
-              <Field label={t('otp')}>
-                <input value={otp} onChange={e => setOtp(e.target.value)} dir="ltr" maxLength={6} />
+          {/* State 1: Enter Phone Number */}
+          {patientMode === 'phone' && (
+            <form onSubmit={handleContinue}>
+              <Field label={t('phone')}>
+                <input
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  placeholder="+9665XXXXXXXX or +91XXXXXXXXXX"
+                  dir="ltr"
+                  autoFocus
+                />
               </Field>
+              <p className="muted" style={{ marginTop: 4 }}>{t('phoneHint')}</p>
+              <div className="row" style={{ marginTop: 14, gap: 10 }}>
+                <button type="submit" disabled={busy || !phone.trim()}>
+                  {busy ? t('loading') : 'Continue →'}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => triggerSendOtp()}
+                  disabled={busy || !phone.trim()}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  💬 Sign in with OTP
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* State 2: Password Login (shown automatically when patient has a password) */}
+          {patientMode === 'password' && (
+            <form onSubmit={loginWithPassword}>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <span className="muted" style={{ fontSize: '0.85rem', display: 'block' }}>Signing in as:</span>
+                  <strong>{phone} {patientName ? `(${patientName})` : ''}</strong>
+                </div>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                  onClick={() => { setPatientMode('phone'); setPatientPassword(''); setErr(''); }}
+                >
+                  Change Phone
+                </button>
+              </div>
+
+              <Field label={t('password')}>
+                <PasswordInput
+                  value={patientPassword}
+                  onChange={e => setPatientPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoFocus
+                />
+              </Field>
+
+              <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
+                <button type="submit" disabled={busy || !patientPassword}>
+                  {busy ? t('loading') : (t('login') || 'Sign In')}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => triggerSendOtp()}
+                  disabled={busy}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  🔑 Forgot password? Sign in with OTP
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* State 3: OTP Verification & Registration */}
+          {patientMode === 'otp' && (
+            <div>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <h2>{exists ? t('returningPatientHeading') : t('newPatientHeading')}</h2>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                  onClick={() => { setPatientMode('phone'); setOtpSent(false); setOtp(''); setErr(''); }}
+                >
+                  Change Phone
+                </button>
+              </div>
+              <p className="muted" style={{ margin: '0 0 10px' }}>
+                Verification code sent to <strong>{phone}</strong> via WhatsApp.
+              </p>
+              {mock && <p className="muted">{t('mockHint')}</p>}
+
+              <Field label={t('otp')}>
+                <input
+                  value={otp}
+                  onChange={e => setOtp(e.target.value)}
+                  placeholder="6-digit code"
+                  dir="ltr"
+                  maxLength={6}
+                  autoFocus
+                />
+              </Field>
+
               {!exists && (
                 <>
                   <Field label={`${t('fullName')} *`}><input value={reg.full_name} onChange={e => setReg({ ...reg, full_name: e.target.value })} /></Field>
@@ -196,11 +366,54 @@ export default function Login() {
                   </div>
                 </>
               )}
-              <div className="row" style={{ marginTop: 10 }}>
-                <button onClick={finish} disabled={busy || !otp}>{exists ? t('verify') : t('register')}</button>
-                <button onClick={() => { setOtpSent(false); setOtp(''); }}>{t('back')}</button>
+
+              <div className="row" style={{ marginTop: 14, gap: 10 }}>
+                <button onClick={finish} disabled={busy || otp.length < 4}>
+                  {busy ? t('loading') : exists ? t('verify') : t('register')}
+                </button>
+                <button type="button" className="btn" onClick={() => triggerSendOtp()}>
+                  Resend OTP
+                </button>
               </div>
-            </>
+            </div>
+          )}
+
+          {/* State 4: Set Password Prompt (First time / Post-OTP) */}
+          {patientMode === 'set_password' && (
+            <form onSubmit={savePasswordAndProceed}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: 14, marginBottom: 14 }}>
+                <h3 style={{ margin: '0 0 4px', color: '#166534' }}>🔐 Set Your Account Password</h3>
+                <p className="muted" style={{ margin: 0, fontSize: '0.88rem' }}>
+                  Set a password now so you can sign in directly next time without waiting for a WhatsApp OTP!
+                </p>
+              </div>
+
+              <Field label="New Password (min 6 characters)">
+                <PasswordInput
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  autoFocus
+                />
+              </Field>
+
+              <Field label="Confirm Password">
+                <PasswordInput
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                />
+              </Field>
+
+              <div className="row" style={{ marginTop: 14, gap: 10 }}>
+                <button type="submit" disabled={busy || !newPassword || newPassword.length < 6}>
+                  {busy ? t('loading') : 'Save Password & Enter'}
+                </button>
+                <button type="button" className="btn" onClick={skipPasswordAndProceed} disabled={busy}>
+                  Skip for Now →
+                </button>
+              </div>
+            </form>
           )}
         </section>
       )}

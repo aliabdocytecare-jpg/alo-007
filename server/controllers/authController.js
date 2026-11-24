@@ -39,6 +39,103 @@ function checkOtp(phone, otp) {
   e.attempts = 0;
 }
 
+export const checkPhone = ah(async (req, res) => {
+  const rawPhone = req.body.phone;
+  if (!rawPhone || typeof rawPhone !== 'string') {
+    throw httpError(400, 'Enter a valid phone number in international format, e.g. +9665XXXXXXXX', 'INVALID_PHONE');
+  }
+  const phone = toE164(rawPhone);
+  const { data: patient } = await db.from('patients').select('id, phone, full_name, password_hash').eq('phone', phone).maybeSingle();
+  res.json({
+    ok: true,
+    phone,
+    exists: Boolean(patient),
+    hasPassword: Boolean(patient?.password_hash),
+    name: patient?.full_name || null
+  });
+});
+
+export const patientLogin = ah(async (req, res) => {
+  const { phone: rawPhone, password } = req.body;
+  if (!rawPhone) throw httpError(400, 'Phone number is required.', 'INVALID_PHONE');
+  if (!password) throw httpError(400, 'Password is required.', 'MISSING_PASSWORD');
+  const phone = toE164(rawPhone);
+
+  const { data: patient } = await db.from('patients').select().eq('phone', phone).maybeSingle();
+  if (!patient) {
+    throw httpError(404, 'No account found for this phone number. Please register.', 'ACCOUNT_NOT_FOUND');
+  }
+  if (!patient.password_hash) {
+    throw httpError(400, 'No password has been set for this account. Please sign in with OTP to set your password.', 'NO_PASSWORD_SET');
+  }
+
+  const match = await bcrypt.compare(String(password).trim(), patient.password_hash);
+  if (!match) {
+    throw httpError(401, 'Incorrect password. Please try again or sign in with OTP.', 'INVALID_CREDENTIALS');
+  }
+
+  const token = issueSession(res, { sub: patient.id, role: 'patient', kind: 'patient' }, PATIENT_TTL);
+  await audit(req, 'PATIENT_LOGIN_PASSWORD', { actorId: patient.id, actorRole: 'patient' });
+  res.json({
+    ok: true,
+    token,
+    user: {
+      id: patient.id,
+      role: 'patient',
+      kind: 'patient',
+      phone: patient.phone,
+      full_name: patient.full_name
+    }
+  });
+});
+
+export const setPassword = ah(async (req, res) => {
+  const { password, phone: rawPhone, otp } = req.body;
+  if (!password || password.length < 6) {
+    throw httpError(400, 'Password must be at least 6 characters long.', 'WEAK_PASSWORD');
+  }
+
+  let patientId = req.session?.sub;
+  if (!patientId) {
+    if (!rawPhone || !otp) {
+      throw httpError(401, 'Authentication or phone + OTP is required to set password.', 'UNAUTHORIZED');
+    }
+    const phone = toE164(rawPhone);
+    checkOtp(phone, otp);
+    const { data: p } = await db.from('patients').select('id').eq('phone', phone).maybeSingle();
+    if (!p) throw httpError(404, 'Patient account not found.', 'NOT_FOUND');
+    patientId = p.id;
+  }
+
+  const hash = await bcrypt.hash(password.trim(), 10);
+  const { data: updated, error } = await db.from('patients')
+    .update({ password_hash: hash })
+    .eq('id', patientId)
+    .select('id, phone, full_name')
+    .single();
+
+  if (error) throw httpError(500, error.message);
+
+  let token = null;
+  if (!req.session?.sub) {
+    token = issueSession(res, { sub: updated.id, role: 'patient', kind: 'patient' }, PATIENT_TTL);
+  }
+
+  await audit(req, 'PATIENT_PASSWORD_SET', { actorId: patientId, actorRole: 'patient' });
+  res.json({
+    ok: true,
+    message: 'Password set successfully',
+    token,
+    user: {
+      id: updated.id,
+      role: 'patient',
+      kind: 'patient',
+      phone: updated.phone,
+      full_name: updated.full_name
+    }
+  });
+});
+
 export const sendOtp = ah(async (req, res) => {
   const rawPhone = req.body.phone;
   if (!rawPhone || typeof rawPhone !== 'string') {
@@ -103,6 +200,7 @@ export const verifyOtp = ah(async (req, res) => {
     ok: true,
     registered: true,
     exists: true,
+    hasPassword: Boolean(patient.password_hash),
     token,
     user: {
       id: patient.id,
@@ -116,7 +214,7 @@ export const verifyOtp = ah(async (req, res) => {
 
 // US-PAT-001: duplicate phone never creates a second account (AC4).
 export const register = ah(async (req, res) => {
-  const { phone: rawPhone, otp, full_name, dob, gender, nationality, email } = req.body;
+  const { phone: rawPhone, otp, full_name, dob, gender, nationality, email, password } = req.body;
   if (!rawPhone) throw httpError(400, 'Phone number is required.', 'INVALID_PHONE');
   const phone = toE164(rawPhone);
   if (!full_name || !full_name.trim()) throw httpError(400, 'Full name is required.', 'MISSING_NAME');
@@ -125,8 +223,22 @@ export const register = ah(async (req, res) => {
   checkOtp(phone, otp);
   const { data: existing } = await db.from('patients').select().eq('phone', phone).maybeSingle();
   if (existing) throw httpError(409, 'An account already exists for this phone number. Please sign in.', 'ACCOUNT_EXISTS');
+
+  let passwordHash = null;
+  if (password && String(password).trim().length >= 6) {
+    passwordHash = await bcrypt.hash(String(password).trim(), 10);
+  }
+
   const { data: p, error } = await db.from('patients')
-    .insert({ phone, full_name: full_name.trim(), dob: dob || null, gender: gender || null, nationality: nationality || null, email: email || null })
+    .insert({
+      phone,
+      full_name: full_name.trim(),
+      dob: dob || null,
+      gender: gender || null,
+      nationality: nationality || null,
+      email: email || null,
+      password_hash: passwordHash
+    })
     .select().single();
   if (error) throw httpError(500, error.message);
   const token = issueSession(res, { sub: p.id, role: 'patient', kind: 'patient' }, PATIENT_TTL);
@@ -134,6 +246,7 @@ export const register = ah(async (req, res) => {
   res.status(201).json({
     ok: true,
     patient: p,
+    hasPassword: Boolean(p.password_hash),
     token,
     user: {
       id: p.id,

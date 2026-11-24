@@ -100,6 +100,9 @@ const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 60, skipSuccessfulRe
 const reviewLimiter = rateLimit({ windowMs: 10 * 60_000, max: 30, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false }); // Test E9: only failed/abusive attempts count (DEC-024)
 
 // ---- Auth (F-AUTH & DEC-056) ----
+api.post('/auth/check-phone', auth.checkPhone);
+api.post('/auth/patient-login', authLimiter, auth.patientLogin);
+api.post('/auth/set-password', auth.setPassword);
 api.post('/auth/send-otp', authLimiter, auth.sendOtp);
 api.post('/auth/verify-otp', authLimiter, auth.verifyOtp);
 api.post('/auth/register', authLimiter, auth.register);
