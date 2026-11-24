@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { db, MOCK_AUTH } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
+import { toE164 } from '../lib/phone.js';
 import { issueSession, COOKIE, PATIENT_TTL, STAFF_TTL } from '../middleware/auth.js';
 import { notifyAdmins } from '../services/notificationService.js';
 import { sendStaffPasswordResetEmail } from '../services/mailService.js';
@@ -39,8 +40,11 @@ function checkOtp(phone, otp) {
 }
 
 export const sendOtp = ah(async (req, res) => {
-  const { phone } = req.body;
-  if (!PHONE_RE.test(phone || '')) throw httpError(400, 'Enter a valid phone number in international format, e.g. +9665XXXXXXXX', 'INVALID_PHONE');
+  const rawPhone = req.body.phone;
+  if (!rawPhone || typeof rawPhone !== 'string') {
+    throw httpError(400, 'Enter a valid phone number in international format, e.g. +9665XXXXXXXX', 'INVALID_PHONE');
+  }
+  const phone = toE164(rawPhone);
   const e = otpEntry(phone);
   assertNotLocked(e);
   const hourAgo = Date.now() - 3600_000;
@@ -82,19 +86,23 @@ export const sendOtp = ah(async (req, res) => {
   }
 
   await audit(req, 'OTP_SENT', { detail: { phone }, actorId: null, actorRole: 'anonymous' });
-  res.json({ ok: true, isNew });
+  // DEC-071: Return both exists and isNew so existing patients never see the registration form
+  res.json({ ok: true, isNew, exists: !isNew, phone });
 });
 
 export const verifyOtp = ah(async (req, res) => {
-  const { phone, otp } = req.body;
+  const { phone: rawPhone, otp } = req.body;
+  if (!rawPhone) throw httpError(400, 'Phone number is required.', 'INVALID_PHONE');
+  const phone = toE164(rawPhone);
   checkOtp(phone, otp);
   const { data: patient } = await db.from('patients').select().eq('phone', phone).maybeSingle();
-  if (!patient) return res.json({ ok: true, registered: false });
+  if (!patient) return res.json({ ok: true, registered: false, exists: false });
   const token = issueSession(res, { sub: patient.id, role: 'patient', kind: 'patient' }, PATIENT_TTL);
   await audit(req, 'PATIENT_LOGIN', { actorId: patient.id, actorRole: 'patient' });
   res.json({
     ok: true,
     registered: true,
+    exists: true,
     token,
     user: {
       id: patient.id,
@@ -108,8 +116,9 @@ export const verifyOtp = ah(async (req, res) => {
 
 // US-PAT-001: duplicate phone never creates a second account (AC4).
 export const register = ah(async (req, res) => {
-  const { phone, otp, full_name, dob, gender, nationality, email } = req.body;
-  if (!PHONE_RE.test(phone || '')) throw httpError(400, 'Invalid phone number format.', 'INVALID_PHONE');
+  const { phone: rawPhone, otp, full_name, dob, gender, nationality, email } = req.body;
+  if (!rawPhone) throw httpError(400, 'Phone number is required.', 'INVALID_PHONE');
+  const phone = toE164(rawPhone);
   if (!full_name || !full_name.trim()) throw httpError(400, 'Full name is required.', 'MISSING_NAME');
   if (dob && new Date(dob) >= new Date()) throw httpError(400, 'Date of birth must be in the past.', 'INVALID_DOB');
   if (gender && !['MALE', 'FEMALE'].includes(gender)) throw httpError(400, 'Gender must be MALE or FEMALE.', 'INVALID_GENDER');

@@ -35,8 +35,14 @@ export default function Login() {
   const sendOtp = async () => {
     setBusy(true); setErr('');
     try {
-      const { data } = await api.post('/auth/send-otp', { phone });
-      setOtpSent(true); setExists(data.exists); setMock(data.mock);
+      const trimmedPhone = phone.trim();
+      const { data } = await api.post('/auth/send-otp', { phone: trimmedPhone });
+      setOtpSent(true);
+      // DEC-071: Robustly resolve patient existence (supports both data.exists and !data.isNew)
+      const patientExists = data.exists !== undefined ? Boolean(data.exists) : !data.isNew;
+      setExists(patientExists);
+      if (data.phone) setPhone(data.phone);
+      setMock(data.mock);
     } catch (e) { setErr(errMsg(e)); }
     setBusy(false);
   };
@@ -44,8 +50,21 @@ export default function Login() {
   const finish = async () => {
     setBusy(true); setErr('');
     try {
-      if (exists) await api.post('/auth/verify-otp', { phone, otp });
-      else await api.post('/auth/register', { phone, otp, ...reg });
+      const trimmedPhone = phone.trim();
+      if (exists) {
+        await api.post('/auth/verify-otp', { phone: trimmedPhone, otp });
+      } else {
+        try {
+          await api.post('/auth/register', { phone: trimmedPhone, otp, ...reg });
+        } catch (regErr) {
+          // DEC-071: Fallback safety net — if account already exists (409), automatically verify OTP and sign in
+          if (regErr.response?.status === 409 || regErr.response?.data?.code === 'ACCOUNT_EXISTS') {
+            await api.post('/auth/verify-otp', { phone: trimmedPhone, otp });
+          } else {
+            throw regErr;
+          }
+        }
+      }
       await refresh();
       nav('/', { replace: true });
     } catch (e) { setErr(errMsg(e)); }

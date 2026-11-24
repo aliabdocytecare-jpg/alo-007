@@ -621,6 +621,21 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Verification:** Ran `npm run preflight` (13/13 passing checks), compiled frontend via `npm run build` with zero errors (122 modules in 6.83s).
 - **Reference:** DEC-004, DEC-068, DEC-069, `client/src/components/CaseStepper.jsx`, `server/lib/caseWorkflowEngine.js`, `case_workflow_tracking_plan.md`.
 
+## DEC-071 — Patient Identity Resolution & Robust OTP Re-Authentication
+- **Decision:** Fixed the patient authentication flow and uniqueness contract across frontend and backend:
+  1. API Contract Alignment (`server/controllers/authController.js`):
+     - In `sendOtp`: Returned `exists: !isNew` alongside `isNew` and canonical `phone`.
+     - In `verifyOtp`: Returned `exists: true` and normalized phone so returning patients are never routed to the registration form.
+  2. Canonical Phone Normalization (`server/lib/phone.js`):
+     - Integrated `toE164(phone)` into `sendOtp`, `verifyOtp`, and `register` in `authController.js`.
+     - Automatically cleans whitespace, dashes, and parenthesized characters, ensuring Saudi numbers (`05...`) and international mobile numbers (`+91...`, `+966...`) consistently match the single unique patient record in Supabase.
+  3. Frontend Robustness & Safety Net Fallback (`client/src/pages/Login.jsx`):
+     - Updated `sendOtp` to evaluate `const patientExists = data.exists !== undefined ? Boolean(data.exists) : !data.isNew;` ensuring returning patients always see "Welcome back! Enter OTP to sign in".
+     - Added an automatic fallback safety net in `finish()`: If an existing patient ever hits `/auth/register` (e.g. from an edge network state) and receives HTTP 409 (`ACCOUNT_EXISTS`), it immediately falls back to `/auth/verify-otp` with the entered OTP, logging them in seamlessly without blocking the user.
+- **Verification:** Verified with production `vite build` (122 modules transformed in 1.69s) and server `preflight` (13/13 passing checks). Tested phone normalization and database lookup with existing patient record (`+919787076765`), confirming `exists: true` and immediate case association.
+- **Reference:** DEC-043, DEC-056, `server/controllers/authController.js`, `client/src/pages/Login.jsx`, `patient_login_root_cause_and_plan.md`.
+
+
 
 
 
