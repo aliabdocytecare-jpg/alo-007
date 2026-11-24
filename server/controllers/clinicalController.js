@@ -67,7 +67,7 @@ export const setMeetLink = ah(async (req, res) => {
 export const startConsultation = ah(async (req, res) => {
   let { data: cons } = await db.from('consultations').select().eq('case_id', req.case.id).maybeSingle();
   if (!cons) {
-    const type = req.case.service_type === 'CONSULTATION' ? (req.case.service_subtype || 'ONLINE') : 'WRITTEN_OPINION';
+    const type = req.case.service_subtype === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE';
     await db.from('consultations').upsert({
       case_id: req.case.id,
       doctor_id: req.session.sub,
@@ -82,7 +82,7 @@ export const startConsultation = ah(async (req, res) => {
 export const saveNotes = ah(async (req, res) => {
   let { data: cons } = await db.from('consultations').select().eq('case_id', req.case.id).maybeSingle();
   if (!cons) {
-    const type = req.case.service_type === 'CONSULTATION' ? (req.case.service_subtype || 'ONLINE') : 'WRITTEN_OPINION';
+    const type = req.case.service_subtype === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE';
     const { data: newCons, error } = await db.from('consultations').upsert({
       case_id: req.case.id,
       doctor_id: req.session.sub,
@@ -106,7 +106,7 @@ export const submitReport = ah(async (req, res) => {
   if (!report) throw httpError(400, 'Final report text is required.');
   let { data: cons } = await db.from('consultations').select().eq('case_id', c.id).maybeSingle();
   if (!cons) {
-    const type = c.service_type === 'CONSULTATION' ? (c.service_subtype || 'ONLINE') : 'WRITTEN_OPINION';
+    const type = c.service_subtype === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE';
     const { data: newCons, error } = await db.from('consultations').upsert({
       case_id: c.id,
       doctor_id: req.session.sub,
