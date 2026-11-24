@@ -27,7 +27,7 @@ export const completeIntake = ah(async (req, res) => {
   await db.from('cases').update({ intake_completed: true }).eq('id', req.case.id);
   await db.from('case_timeline').insert({
     case_id: req.case.id, from_status: req.case.status, to_status: req.case.status,
-    actor_id: req.session.sub, actor_role: 'nurse', note: 'Intake completed — routed to coordinator', patient_visible: false
+    actor_id: req.session.sub, actor_role: 'nurse', note: 'Clinical triage intake completed by ALO Nurse', patient_visible: false
   });
   await audit(req, 'INTAKE_COMPLETED', { resourceType: 'case', resourceId: req.case.id });
   await notifyCoordinators({ event: 'INTAKE_DONE', caseId: req.case.id, title: 'Intake completed', body: `Case ${req.case.case_number}: nursing intake complete. Ready for next step.` });

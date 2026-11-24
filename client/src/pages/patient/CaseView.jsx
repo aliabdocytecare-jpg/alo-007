@@ -186,17 +186,42 @@ export default function CaseView() {
 
       {c.consultation && (
         <section className="box">
-          <h2>{t('scheduledFor')}</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+            <h2 style={{ margin: 0 }}>{t('scheduledFor')}</h2>
+            {c.consultation.meet_url && (
+              <span className="badge" style={{ background: '#0284c7', color: '#fff', fontSize: '0.85rem', padding: '4px 8px', borderRadius: '4px' }}>
+                🌐 {lang === 'ar' ? 'استشارة مرئية مشتركة مع مختص دولي' : 'Joint Teleconsultation with Global Specialist'}
+              </span>
+            )}
+          </div>
           <p>{fmtDate(c.consultation.scheduled_at)} · {c.consultation.consultation_type === 'ONLINE' ? t('online') : t('inPerson')}
             {c.consultation.doctor_name ? ` · ${t('consultationWith')} ${c.consultation.doctor_name}` : ''}</p>
           {c.consultation.consultation_type === 'IN_PERSON' && c.consultation.clinic_name && (
             <p>{c.consultation.clinic_name}{c.consultation.clinic_address ? ` — ${c.consultation.clinic_address}` : ''}</p>
           )}
-          {c.consultation.meet_url
-            ? (c.consultation.joinable
-              ? <a className="btn" href={c.consultation.meet_url} target="_blank" rel="noreferrer">{t('join')} →</a>
-              : <p>{t('meetLink')}: <a href={c.consultation.meet_url} target="_blank" rel="noreferrer">{c.consultation.meet_url}</a></p>)
-            : <p className="muted">{t('waitingRoom')}</p>}
+          {c.consultation.meet_url ? (
+            <div style={{ marginTop: 12, padding: 12, background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div>
+                <strong style={{ color: '#166534', display: 'block' }}>
+                  🎥 {lang === 'ar' ? 'غرفة الاستشارة المرئية المباشرة (Google Meet)' : 'Live Video Consultation Room (Google Meet)'}
+                </strong>
+                <span className="muted" style={{ fontSize: '0.85rem' }}>
+                  {c.consultation.joinable
+                    ? (lang === 'ar' ? 'الجلسة متاحة الآن. اضغط للانضمام' : 'Session is active now. Click to join')
+                    : (lang === 'ar' ? 'رابط الدخول جاهز' : 'Room is ready for your scheduled slot')}
+                </span>
+              </div>
+              <a
+                className="btn"
+                href={c.consultation.meet_url}
+                target="_blank"
+                rel="noreferrer"
+                style={{ background: '#16a34a', color: '#fff', fontWeight: 700, padding: '10px 20px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                🎥 {lang === 'ar' ? 'انضم للمقابلة الآن' : 'Join Video Consultation Room →'}
+              </a>
+            </div>
+          ) : <p className="muted">{t('waitingRoom')}</p>}
         </section>
       )}
 

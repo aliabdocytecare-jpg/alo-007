@@ -82,6 +82,19 @@ async function reviewPayload(t) {
 
   const { data: legacyReview } = await db.from('international_reviews').select().eq('case_id', c.id).maybeSingle();
 
+  // Fetch active consultation details (for Live Tripartite Video session support)
+  const { data: cons } = await db
+    .from('consultations')
+    .select('scheduled_at, meet_url, consultation_type, doctor_id, clinic_name')
+    .eq('case_id', c.id)
+    .maybeSingle();
+
+  let saudiDoctor = null;
+  if (cons?.doctor_id) {
+    const { data: docUser } = await db.from('staff_users').select('full_name, specialty').eq('id', cons.doctor_id).maybeSingle();
+    saudiDoctor = docUser;
+  }
+
   const isCaseReview = !!t.isCaseReview;
   const findings = isCaseReview ? (t.clinical_findings || '') : (legacyReview?.findings || '');
   const rec = isCaseReview ? (t.recommendations || '') : (legacyReview?.recommendation || '');
@@ -127,7 +140,17 @@ async function reviewPayload(t) {
         }
       : null,
     submitted: isCaseReview ? (t.status === 'submitted') : (legacyReview?.status === 'SUBMITTED'),
-    expires_at: t.expires_at || t.token_expires_at
+    expires_at: t.expires_at || t.token_expires_at,
+
+    // Live Tripartite Video Consultation Context (WP2)
+    consultation: cons ? {
+      scheduled_at: cons.scheduled_at,
+      meet_url: cons.meet_url,
+      is_tripartite: !!cons.meet_url,
+      consultation_type: cons.consultation_type,
+      saudi_doctor_name: saudiDoctor?.full_name || 'Saudi Licensed Physician',
+      saudi_doctor_specialty: saudiDoctor?.specialty || c.specialty || 'Consultant'
+    } : null
   };
 }
 

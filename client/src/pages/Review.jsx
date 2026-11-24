@@ -197,6 +197,54 @@ export default function Review() {
       </p>
       <p>{t('age')}: {data.patient_age ?? '—'} · {t('gender')}: {data.patient_gender === 'FEMALE' ? t('female') : data.patient_gender === 'MALE' ? t('male') : '—'}</p>
 
+      {/* WP2: Live Tripartite Video Room Session Card */}
+      {data.consultation?.meet_url && (
+        <section className="box" style={{ background: '#f0fdf4', border: '2px solid #16a34a', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+            <span className="badge" style={{ background: '#16a34a', color: '#fff', fontSize: '0.85rem', padding: '4px 8px', borderRadius: '4px', fontWeight: 700 }}>
+              🔴 LIVE TRIPARTITE VIDEO CONSULTATION
+            </span>
+            <span style={{ fontSize: '0.9rem', color: '#166534', fontWeight: 600 }}>
+              Scheduled: {fmtDate(data.consultation.scheduled_at)}
+            </span>
+          </div>
+
+          <h3 style={{ margin: '8px 0 6px', color: '#14532d', fontSize: '1.15rem' }}>
+            Tripartite Clinical Session with Patient & Saudi Licensed Physician
+          </h3>
+          <p style={{ margin: '0 0 12px', fontSize: '0.92rem', color: '#166534' }}>
+            <strong>Anchoring Physician:</strong> {data.consultation.saudi_doctor_name} ({data.consultation.saudi_doctor_specialty} · Saudi Arabia)<br />
+            You are invited as the Senior International Specialist to co-consult on this case in real-time. Join the video room below:
+          </p>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <a
+              href={data.consultation.meet_url}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                background: '#15803d',
+                color: '#fff',
+                textDecoration: 'none',
+                padding: '12px 24px',
+                borderRadius: '6px',
+                fontSize: '1.05rem',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              }}
+            >
+              🎥 Join Live Google Meet Room Now →
+            </a>
+            <span className="muted" style={{ fontSize: '0.85rem' }}>
+              Link: {data.consultation.meet_url}
+            </span>
+          </div>
+        </section>
+      )}
+
       {/* Case Details */}
       <section className="box">
         <h2>{t('reason')}</h2>

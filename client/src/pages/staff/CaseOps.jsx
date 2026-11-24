@@ -206,7 +206,22 @@ function NurseDesk({ c, reload }) {
           <h4 style={{ margin: '0 0 8px' }}>📅 Stream 2: Joint Online Consultation Scheduling</h4>
           <div className="grid2">
             <Field label="Appointment Date & Time"><input type="datetime-local" value={schedAt} onChange={e => setSchedAt(e.target.value)} /></Field>
-            <Field label="Google Meet Room Link"><input placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meet} onChange={e => setMeet(e.target.value)} dir="ltr" /></Field>
+            <Field label="Google Meet Room Link">
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meet} onChange={e => setMeet(e.target.value)} dir="ltr" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rnd = () => Math.random().toString(36).substring(2, 5).toLowerCase();
+                    setMeet(`https://meet.google.com/${rnd()}-${rnd()}a-${rnd()}`);
+                  }}
+                  className="btn"
+                  style={{ whiteSpace: 'nowrap', padding: '6px 10px', fontSize: '0.82rem' }}
+                >
+                  ⚡ Auto-Gen Meet
+                </button>
+              </div>
+            </Field>
           </div>
           <div style={{ marginTop: 8 }}>
             <label style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -243,6 +258,17 @@ function NurseDesk({ c, reload }) {
       {c.service_type === 'CONSULTATION' && c.consultation && (
         <div className="row" style={{ marginTop: 8 }}>
           <input style={{ maxWidth: 360 }} placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meet} onChange={e => setMeet(e.target.value)} dir="ltr" />
+          <button
+            type="button"
+            onClick={() => {
+              const rnd = () => Math.random().toString(36).substring(2, 5).toLowerCase();
+              setMeet(`https://meet.google.com/${rnd()}-${rnd()}a-${rnd()}`);
+            }}
+            className="btn"
+            style={{ padding: '6px 10px', fontSize: '0.85rem' }}
+          >
+            ⚡ Auto-Gen
+          </button>
           <button onClick={() => run(() => api.patch(`/cases/${c.id}/meet-link`, { meet_url: meet }))}>{t('meetLink')}</button>
           {c.consultation.meet_url && <span className="muted">{c.consultation.meet_url}</span>}
         </div>
@@ -458,8 +484,34 @@ function DoctorPanel({ c, reload }) {
         <p className="muted">{t('vitals')}: BP {c.vitals[0].blood_pressure || '—'} · HR {c.vitals[0].heart_rate ?? '—'} · T {c.vitals[0].temperature ?? '—'} · SpO2 {c.vitals[0].spo2 ?? '—'} {c.vitals[0].nursing_notes ? `· ${c.vitals[0].nursing_notes}` : ''}</p>
       )}
 
+      {/* Live Video Session & Tripartite Control Banner for Doctor */}
+      {c.consultation?.meet_url && (
+        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '6px', padding: '12px 14px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <strong style={{ color: '#166534', display: 'block', fontSize: '0.95rem' }}>
+              🔴 Live Video Room: {c.consultation.scheduled_at ? fmtDate(c.consultation.scheduled_at) : 'Active Session'}
+            </strong>
+            {c.magic_links?.[0]?.specialist_name ? (
+              <span style={{ fontSize: '0.85rem', color: '#15803d' }}>
+                🌐 Live Tripartite with Global Specialist: <strong>{c.magic_links[0].specialist_name}</strong> ({c.magic_links[0].specialist_phone})
+              </span>
+            ) : (
+              <span style={{ fontSize: '0.85rem', color: '#15803d' }}>Direct Teleconsultation with Patient</span>
+            )}
+          </div>
+          <a
+            className="btn"
+            href={c.consultation.meet_url}
+            target="_blank"
+            rel="noreferrer"
+            style={{ background: '#16a34a', color: '#fff', fontWeight: 700, padding: '8px 16px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            🎥 Join Video Call (Google Meet) →
+          </a>
+        </div>
+      )}
+
       <div className="row">
-        {joinable && <a className="btn" href={c.consultation.meet_url} target="_blank" rel="noreferrer">{t('join')} →</a>}
         {['SPECIALIST_ASSIGNED', 'APPOINTMENT_SCHEDULED'].includes(c.status) && (
           <button
             style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontWeight: 600, padding: '6px 14px' }}

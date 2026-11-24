@@ -667,6 +667,23 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Verification:** Verified with `vite build` (122 modules transformed in 1.55s) and server `preflight` (13/13 passing checks).
 - **Reference:** DEC-071, DEC-072, `client/src/pages/staff/CaseOps.jsx`, `server/controllers/clinicalController.js`, `server/controllers/caseController.js`, `client/src/pages/patient/Book.jsx`, `client/src/pages/patient/CaseView.jsx`, `client/src/pages/public/Kiosk.jsx`.
 
+## DEC-074 — Tripartite Live Video Room Experience & ALO Nurse Role Finalization
+- **Decision:** Completed end-to-end integration for Stream 2 (Live Tripartite Video) across all four participant views and finalized role consolidation:
+  1. **Role Consolidation to ALO Nurse (`staff_users`, `client/src/lib/i18n.jsx`, `server/controllers/clinicalController.js`):**
+     - Migrated `staff_users` coordinator accounts (`then210190thiyagu@gmail.com`) to `role = 'nurse'`.
+     - Replaced legacy references (`"submit to coordinator"`, `"routed to coordinator"`) with `"ALO Nurse"` and `"ALO Nurse Desk"`.
+  2. **Indian Specialist Live Video Experience (`server/controllers/reviewController.js`, `client/src/pages/Review.jsx`):**
+     - Updated `reviewPayload` to expose active consultation details (`scheduled_at`, `meet_url`, `saudi_doctor_name`, `saudi_doctor_specialty`).
+     - Added a prominent Live Tripartite Consultation Session Card at the top of `Review.jsx` with scheduled time, Saudi anchoring doctor details, and a direct `[🎥 Join Live Google Meet Room Now →]` button.
+  3. **Saudi Doctor Panel Video Control (`client/src/pages/staff/CaseOps.jsx`):**
+     - Added a top live video session bar in `DoctorPanel` displaying consultation time, Co-Consultant Indian Doctor name & phone, and direct `[🎥 Join Video Call (Google Meet) →]` button.
+  4. **ALO Nurse 1-Click Meet Room Generator (`client/src/pages/staff/CaseOps.jsx`):**
+     - Added `[⚡ Auto-Gen Meet]` buttons to both the scheduling form and active consultation meet-link editor, generating valid format `https://meet.google.com/xxx-xxxx-xxx` links instantly.
+  5. **Patient Case View Joint Consultation Card (`client/src/pages/patient/CaseView.jsx`):**
+     - Displayed `🌐 Joint Teleconsultation with Global Specialist` badge and a prominent green `[🎥 Join Video Consultation Room →]` button.
+- **Verification:** Verified with `vite build` (122 modules transformed in 3.04s) and server `preflight` (13/13 passing checks).
+- **Reference:** DEC-073, `alo_tripartite_video_and_nurse_unification_plan.md`, `client/src/pages/Review.jsx`, `server/controllers/reviewController.js`, `client/src/pages/staff/CaseOps.jsx`, `client/src/pages/patient/CaseView.jsx`.
+
 
 
 
