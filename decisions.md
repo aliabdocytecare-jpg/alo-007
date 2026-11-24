@@ -635,6 +635,20 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Verification:** Verified with production `vite build` (122 modules transformed in 1.69s) and server `preflight` (13/13 passing checks). Tested phone normalization and database lookup with existing patient record (`+919787076765`), confirming `exists: true` and immediate case association.
 - **Reference:** DEC-043, DEC-056, `server/controllers/authController.js`, `client/src/pages/Login.jsx`, `patient_login_root_cause_and_plan.md`.
 
+## DEC-072 — Doctor Medical Opinion Submission for Written Opinions & Consultations
+- **Decision:** Unlocked the Doctor Review and Finalize Opinion workflow for cases in `SPECIALIST_ASSIGNED` status across frontend and backend:
+  1. Frontend Visibility & Action Unlocking (`client/src/pages/staff/CaseOps.jsx`):
+     - Unconditionally initialized clinical notes draft state in `DoctorPanel` so diagnosis, chief complaint, findings, and treatment plan form fields render immediately even without a pre-existing consultation row.
+     - Updated `canWrite` and `canReport` visibility gates to include `SPECIALIST_ASSIGNED` alongside `APPOINTMENT_SCHEDULED`, `IN_PROGRESS`, and `UNDER_MEDICAL_REVIEW`.
+     - Rendered `[▶ Start Medical Review]` action for `SPECIALIST_ASSIGNED` cases and exposed the `[✓ Finalize Opinion & Submit to Coordinator]` submit button.
+  2. State Machine Transitions (`server/services/stateMachine.js`):
+     - Updated `SPECIALIST_ASSIGNED` allowed transitions to include `IN_PROGRESS: ['doctor', 'coordinator']` and `REPORT_SUBMITTED: ['doctor', 'system']`.
+  3. On-The-Fly Consultation Record Provisioning (`server/controllers/clinicalController.js`):
+     - In `startConsultation`, `saveNotes`, and `submitReport`: Automatically upsert an initial `consultations` record with `consultation_type: 'WRITTEN_OPINION'` if one does not already exist, preventing 409 errors on GMO cases.
+- **Verification:** Built frontend (`vite build` — 122 modules transformed in 2.08s) and verified server preflight (13/13 passing checks). Tested end-to-end flow with case `ALO-2026-00003`.
+- **Reference:** DEC-070, DEC-071, `client/src/pages/staff/CaseOps.jsx`, `server/services/stateMachine.js`, `server/controllers/clinicalController.js`, `doctor_review_written_opinion_fix_plan.md`.
+
+
 
 
 

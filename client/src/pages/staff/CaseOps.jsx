@@ -326,7 +326,16 @@ function DoctorPanel({ c, reload }) {
   }, [c.id, c.parent_case_id]);
 
   useEffect(() => {
-    if (notes === null && c.consultation) setNotes({ chief_complaint: '', findings: '', diagnosis: '', plan: '', free_text: '', ...(c.consultation.notes_draft || {}) });
+    if (notes === null) {
+      setNotes({
+        chief_complaint: '',
+        findings: '',
+        diagnosis: '',
+        plan: '',
+        free_text: '',
+        ...(c.consultation?.notes_draft || {})
+      });
+    }
   }, [c.consultation, notes]);
 
   // US-DOC-004 AC1: auto-save draft every 60 seconds.
@@ -349,8 +358,9 @@ function DoctorPanel({ c, reload }) {
   };
 
   const joinable = c.consultation?.meet_url && c.consultation.scheduled_at && Date.now() >= new Date(c.consultation.scheduled_at).getTime() - 15 * 60_000;
-  const canWrite = ['APPOINTMENT_SCHEDULED', 'IN_PROGRESS'].includes(c.status);
-  const canReport = c.status === 'IN_PROGRESS' && !c.consultation?.submitted_at;
+  // DEC-072: Allow doctor to write and report directly on assigned cases (written opinion / consultation)
+  const canWrite = ['SPECIALIST_ASSIGNED', 'APPOINTMENT_SCHEDULED', 'IN_PROGRESS', 'UNDER_MEDICAL_REVIEW'].includes(c.status);
+  const canReport = ['SPECIALIST_ASSIGNED', 'APPOINTMENT_SCHEDULED', 'IN_PROGRESS', 'UNDER_MEDICAL_REVIEW'].includes(c.status) && !c.consultation?.submitted_at;
 
   return (
     <section className="box">
@@ -382,7 +392,14 @@ function DoctorPanel({ c, reload }) {
 
       <div className="row">
         {joinable && <a className="btn" href={c.consultation.meet_url} target="_blank" rel="noreferrer">{t('join')} →</a>}
-        {c.status === 'APPOINTMENT_SCHEDULED' && <button onClick={() => run(() => api.post(`/cases/${c.id}/start`))}>{t('start')}</button>}
+        {['SPECIALIST_ASSIGNED', 'APPOINTMENT_SCHEDULED'].includes(c.status) && (
+          <button
+            style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontWeight: 600, padding: '6px 14px' }}
+            onClick={() => run(() => api.post(`/cases/${c.id}/start`))}
+          >
+            ▶ {c.service_type === 'GMO' ? 'Start Medical Review' : t('start')}
+          </button>
+        )}
       </div>
 
       {notes && canWrite && (

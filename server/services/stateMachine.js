@@ -35,7 +35,7 @@ export const TRANSITIONS = {
   INITIAL_REVIEW:           { ADDITIONAL_INFO_REQUIRED: ['coordinator'], READY_FOR_ASSIGNMENT: ['coordinator', 'admin'] },
   ADDITIONAL_INFO_REQUIRED: { INITIAL_REVIEW: ['system', 'coordinator'] },
   READY_FOR_ASSIGNMENT:     { SPECIALIST_ASSIGNED: ['coordinator'], ADDITIONAL_INFO_REQUIRED: ['coordinator'] },
-  SPECIALIST_ASSIGNED:      { APPOINTMENT_SCHEDULED: ['coordinator'], UNDER_MEDICAL_REVIEW: ['system'] },
+  SPECIALIST_ASSIGNED:      { APPOINTMENT_SCHEDULED: ['coordinator'], IN_PROGRESS: ['doctor', 'coordinator'], REPORT_SUBMITTED: ['doctor', 'system'], UNDER_MEDICAL_REVIEW: ['system', 'doctor', 'coordinator'] },
   APPOINTMENT_SCHEDULED:    { IN_PROGRESS: ['doctor', 'system', 'coordinator'] },
   IN_PROGRESS:              { REPORT_SUBMITTED: ['doctor'] },
   UNDER_MEDICAL_REVIEW:     { REPORT_SUBMITTED: ['international', 'system'] },

@@ -65,14 +65,32 @@ export const setMeetLink = ah(async (req, res) => {
 });
 
 export const startConsultation = ah(async (req, res) => {
+  let { data: cons } = await db.from('consultations').select().eq('case_id', req.case.id).maybeSingle();
+  if (!cons) {
+    const type = req.case.service_type === 'CONSULTATION' ? (req.case.service_subtype || 'ONLINE') : 'WRITTEN_OPINION';
+    await db.from('consultations').upsert({
+      case_id: req.case.id,
+      doctor_id: req.session.sub,
+      consultation_type: type
+    }, { onConflict: 'case_id' });
+  }
   await transition(req.case.id, 'IN_PROGRESS', { actorId: req.session.sub, actorRole: 'doctor' });
   res.json({ ok: true });
 });
 
 // US-DOC-004: structured draft notes; visible to doctor + coordinator only (BR-014).
 export const saveNotes = ah(async (req, res) => {
-  const { data: cons } = await db.from('consultations').select().eq('case_id', req.case.id).maybeSingle();
-  if (!cons) throw httpError(409, 'No consultation record. Coordinator must schedule first.');
+  let { data: cons } = await db.from('consultations').select().eq('case_id', req.case.id).maybeSingle();
+  if (!cons) {
+    const type = req.case.service_type === 'CONSULTATION' ? (req.case.service_subtype || 'ONLINE') : 'WRITTEN_OPINION';
+    const { data: newCons, error } = await db.from('consultations').upsert({
+      case_id: req.case.id,
+      doctor_id: req.session.sub,
+      consultation_type: type
+    }, { onConflict: 'case_id' }).select().single();
+    if (error) throw httpError(500, error.message);
+    cons = newCons;
+  }
   const notes = {
     chief_complaint: req.body.chief_complaint || '', findings: req.body.findings || '',
     diagnosis: req.body.diagnosis || '', plan: req.body.plan || '', free_text: req.body.free_text || ''
@@ -86,8 +104,17 @@ export const submitReport = ah(async (req, res) => {
   const c = req.case;
   const report = req.body.report?.trim();
   if (!report) throw httpError(400, 'Final report text is required.');
-  const { data: cons } = await db.from('consultations').select().eq('case_id', c.id).maybeSingle();
-  if (!cons) throw httpError(409, 'No consultation record found.');
+  let { data: cons } = await db.from('consultations').select().eq('case_id', c.id).maybeSingle();
+  if (!cons) {
+    const type = c.service_type === 'CONSULTATION' ? (c.service_subtype || 'ONLINE') : 'WRITTEN_OPINION';
+    const { data: newCons, error } = await db.from('consultations').upsert({
+      case_id: c.id,
+      doctor_id: req.session.sub,
+      consultation_type: type
+    }, { onConflict: 'case_id' }).select().single();
+    if (error) throw httpError(500, error.message);
+    cons = newCons;
+  }
   if (cons.submitted_at) throw httpError(409, 'Final report already submitted.');
   const fu = !!req.body.follow_up_recommended;
   await db.from('consultations').update({
