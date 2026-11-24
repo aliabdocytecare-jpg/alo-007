@@ -3,7 +3,7 @@ import { db } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
 import { createCase, transition, completeService, listCasesForRole, getCaseForRole } from '../services/caseService.js';
 import { issueLink, revokeActiveLinks } from '../services/magicLinkService.js';
-import { notify, notifyAdmins } from '../services/notificationService.js';
+import { notify, notifyAdmins, notifyCoordinators } from '../services/notificationService.js';
 
 export const listCases = ah(async (req, res) => {
   res.json(await listCasesForRole(req.session));
@@ -119,11 +119,44 @@ export const revokeLink = ah(async (req, res) => {
   res.json({ ok: true });
 });
 
-// BR-020 / US-CRD-010: mandatory reason, archive not delete, N-14.
+// BR-020 / US-CRD-010 / WP4: Patient self-service or staff cancellation.
+// Auto-releases booked hospital slots and triggers high-priority triage alerts for worsening symptoms.
 export const cancel = ah(async (req, res) => {
   const reason = req.body.reason?.trim();
   if (!reason) throw httpError(400, 'A cancellation reason is required.');
+
+  // Patient ownership validation
+  if (req.session.role === 'patient' && req.case.patient_id !== req.session.sub) {
+    throw httpError(403, 'Forbidden: You can only cancel your own cases.');
+  }
+
+  // Release any linked hospital appointment slot back to 'free'
+  try {
+    const { data: hospCase } = await db.from('hospital_cases').select('id').eq('alo_case_id', req.case.id).maybeSingle();
+    if (hospCase) {
+      await db.from('hospital_slots').update({
+        status: 'free',
+        released_at: new Date().toISOString(),
+        hospital_case_id: null
+      }).eq('hospital_case_id', hospCase.id);
+    }
+  } catch (err) {
+    console.error('Slot release on cancel error:', err?.message);
+  }
+
   await transition(req.case.id, 'CANCELLED', { actorId: req.session.sub, actorRole: req.session.role, note: reason });
+
+  // Safety Gate: Worsening symptoms trigger immediate alert to ALO Nurse
+  const isWorsening = req.body.worsening || /worsen|acute|emergency|severe|chest|breath/i.test(reason);
+  if (isWorsening) {
+    await notifyCoordinators({
+      event: 'EMERGENCY_CANCELLATION',
+      caseId: req.case.id,
+      title: '🚨 Patient Cancelled: Worsening Symptoms',
+      body: `Case ${req.case.case_number}: Patient cancelled reporting worsening/emergency symptoms (${reason}). Mandatory clinical triage follow-up required.`
+    });
+  }
+
   await notify({ event: 'N-14', caseId: req.case.id, recipientType: 'patient', recipientId: req.case.patient_id, title: 'Case Cancelled', body: `Case ${req.case.case_number} has been cancelled. Reason: ${reason}` });
   res.json({ ok: true });
 });

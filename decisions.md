@@ -648,6 +648,25 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Verification:** Built frontend (`vite build` — 122 modules transformed in 2.08s) and verified server preflight (13/13 passing checks). Tested end-to-end flow with case `ALO-2026-00003`.
 - **Reference:** DEC-070, DEC-071, `client/src/pages/staff/CaseOps.jsx`, `server/services/stateMachine.js`, `server/controllers/clinicalController.js`, `doctor_review_written_opinion_fix_plan.md`.
 
+## DEC-073 — ALO DOCTOR Real-World Operational Architecture (Unified Nurse Desk, Tripartite Video, Drop Physical Kiosks, 997 Safety Gate & Self-Cancellation)
+- **Decision:** Aligned system with real-world Saudi healthcare regulations (MOH/SCFHS) and operational reality across 4 key work packages:
+  1. **WP1: Unified "ALO Nurse Desk" (`client/src/pages/staff/CaseOps.jsx`, `server/services/stateMachine.js`, `server/index.js`):**
+     - Consolidated separate Coordinator and Nurse roles into a single high-efficiency `nurse` role.
+     - Merged `CoordinatorPanel` and `NursePanel` in `CaseOps.jsx` into `<NurseDesk />`, featuring top-bar credential badges (Iqama/Saudi ID, SCFHS privileges), clinical triage protocol banners (Mandatory Call vs. Light-Touch), intake vitals and missing document checklists, payment confirmation/dispatch, doctor assignment, and report release.
+     - Authorized `nurse` role across state transitions (`INITIAL_REVIEW`, `READY_FOR_ASSIGNMENT`, `SPECIALIST_ASSIGNED`, `APPOINTMENT_SCHEDULED`, `REPORT_SUBMITTED`, `COMPLETED`, `CANCELLED`) and case operational endpoints.
+  2. **WP2: Live Tripartite Video Room Scheduling (`server/controllers/clinicalController.js`, `client/src/pages/staff/CaseOps.jsx`):**
+     - Enhanced `schedule` in `clinicalController.js` to support tripartite consultations ([Patient] + [Saudi Hospital Doctor] + [Indian Consultant] + [ALO Nurse moderator]).
+     - When `is_tripartite` is enabled with specialist name and WhatsApp phone number, automatically issues a secure review Magic Link token so the international consultant can join the shared Google Meet room and review case documents.
+  3. **WP3: Drop Physical Tablet Kiosks & Streamline Hospital Reception Web Desk (`client/src/pages/public/Kiosk.jsx`):**
+     - Deprecated physical tablet pairing and unattended reset loops.
+     - Transitioned day-clinic arrival workflows 100% to the Hospital Reception Web Desk (`/hospital`), providing receptionists with real-time queue management, check-in code lookups, and direct clinic routing.
+  4. **WP4: Emergency 997 Safety Gate & Patient Self-Service Cancellation (`client/src/pages/patient/Book.jsx`, `client/src/pages/patient/CaseView.jsx`, `server/controllers/caseController.js`):**
+     - In `Book.jsx`: Added mandatory red-flag emergency screening for acute symptoms (chest pain, breathlessness, stroke signs, heavy bleeding). Halts booking, displays persistent 997 call button, and disables submission.
+     - In `CaseView.jsx`: Added patient self-service cancellation with cutoff policy notice (>24h full refund and slot release vs. <24h late cancellation policy). If patient flags worsening symptoms, displays immediate 997 emergency warning.
+     - In `caseController.js`: In `cancel`, validated patient case ownership, auto-released any associated `hospital_slots` row back to `'free'`, and triggered a high-priority alert to ALO Nurse coordinators if cancellation is due to worsening symptoms.
+- **Verification:** Verified with `vite build` (122 modules transformed in 1.55s) and server `preflight` (13/13 passing checks).
+- **Reference:** DEC-071, DEC-072, `client/src/pages/staff/CaseOps.jsx`, `server/controllers/clinicalController.js`, `server/controllers/caseController.js`, `client/src/pages/patient/Book.jsx`, `client/src/pages/patient/CaseView.jsx`, `client/src/pages/public/Kiosk.jsx`.
+
 
 
 

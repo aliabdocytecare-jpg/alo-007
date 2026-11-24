@@ -3,6 +3,7 @@ import { db } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
 import { transition } from '../services/caseService.js';
 import { notify, notifyCoordinators } from '../services/notificationService.js';
+import { issueLink } from '../services/magicLinkService.js';
 
 const MEET_RE = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/i;
 
@@ -33,23 +34,44 @@ export const completeIntake = ah(async (req, res) => {
   res.json({ ok: true });
 });
 
-// Coordinator scheduling -> APPOINTMENT_SCHEDULED + N-03.
+// Coordinator/Nurse scheduling -> APPOINTMENT_SCHEDULED + N-03. Supports Stream 2 Live Tripartite Video.
 export const schedule = ah(async (req, res) => {
   const c = req.case;
   if (c.service_type !== 'CONSULTATION') throw httpError(409, 'Only consultation cases can be scheduled.');
   if (c.status !== 'SPECIALIST_ASSIGNED') throw httpError(409, 'Assign a doctor before scheduling.');
-  const { scheduled_at, clinic_name, clinic_address } = req.body;
+  const { scheduled_at, clinic_name, clinic_address, meet_url, is_tripartite, specialist_name, specialist_phone } = req.body;
   if (!scheduled_at || new Date(scheduled_at) <= new Date()) throw httpError(400, 'Appointment must be in the future.');
   const { data: assigns } = await db.from('case_assignments').select().eq('case_id', c.id);
   const doctor = (assigns || []).find(a => a.role === 'doctor');
   const type = c.service_subtype === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE';
   const { error } = await db.from('consultations').upsert({
     case_id: c.id, doctor_id: doctor?.staff_id || null, consultation_type: type,
-    scheduled_at, clinic_name: clinic_name || null, clinic_address: clinic_address || null
+    scheduled_at, clinic_name: clinic_name || null, clinic_address: clinic_address || null,
+    meet_url: meet_url || null
   }, { onConflict: 'case_id' });
   if (error) throw httpError(500, error.message);
-  await transition(c.id, 'APPOINTMENT_SCHEDULED', { actorId: req.session.sub, actorRole: 'coordinator', note: `Appointment: ${scheduled_at}` });
-  await notify({ event: 'N-03', caseId: c.id, recipientType: 'patient', recipientId: c.patient_id, title: 'Appointment Confirmed', body: `Case ${c.case_number}: your appointment is confirmed for ${new Date(scheduled_at).toLocaleString()}. Open AloDoc for details.` });
+
+  if (is_tripartite && specialist_name && specialist_phone) {
+    try {
+      await issueLink(c.id, specialist_name.trim(), specialist_phone, req.session.sub);
+    } catch (e) {
+      console.error('Tripartite specialist link dispatch error:', e?.message);
+    }
+  }
+
+  await transition(c.id, 'APPOINTMENT_SCHEDULED', {
+    actorId: req.session.sub,
+    actorRole: req.session.role || 'nurse',
+    note: `Appointment: ${scheduled_at}${is_tripartite ? ` (Live Tripartite Video: Saudi Doctor + ${specialist_name})` : ''}`
+  });
+  await notify({
+    event: 'N-03',
+    caseId: c.id,
+    recipientType: 'patient',
+    recipientId: c.patient_id,
+    title: 'Appointment Confirmed',
+    body: `Case ${c.case_number}: your appointment is confirmed for ${new Date(scheduled_at).toLocaleString()}.${meet_url ? ` Video room: ${meet_url}` : ''} Open AloDoc for details.`
+  });
   res.json({ ok: true });
 });
 

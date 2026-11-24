@@ -127,31 +127,31 @@ api.get('/settings/public', admin.publicSettings);
 api.get('/cases', requireAuth, cases.listCases);
 api.post('/cases', requireRole('patient'), cases.create);
 api.get('/cases/:id', requireAuth, loadCase, requireCaseAccess, cases.getOne);
-api.patch('/cases/:id/status', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, cases.patchStatus);
-api.post('/cases/:id/confirm-payment', requireRole('coordinator'), loadCase, requireCaseAccess, cases.confirmPayment);
-api.post('/cases/:id/request-documents', requireRole('coordinator'), loadCase, requireCaseAccess, cases.requestDocuments);
-api.post('/cases/:id/assign', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, cases.assign);
-api.post('/cases/:id/revoke-link', requireRole('coordinator'), loadCase, requireCaseAccess, cases.revokeLink);
-api.post('/cases/:id/cancel', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, cases.cancel);
-api.post('/cases/:id/escalate', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, cases.escalate);
-api.get('/staff/directory', requireRole('coordinator', 'admin'), cases.staffDirectory);
+api.patch('/cases/:id/status', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.patchStatus);
+api.post('/cases/:id/confirm-payment', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.confirmPayment);
+api.post('/cases/:id/request-documents', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.requestDocuments);
+api.post('/cases/:id/assign', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.assign);
+api.post('/cases/:id/revoke-link', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.revokeLink);
+api.post('/cases/:id/cancel', requireAuth, loadCase, requireCaseAccess, cases.cancel); // WP4: patient or nurse/coordinator/admin can cancel
+api.post('/cases/:id/escalate', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, cases.escalate);
+api.get('/staff/directory', requireRole('nurse', 'coordinator', 'admin'), cases.staffDirectory);
 
 // ---- Remote Case Documents (F-CASE-05) ----
 api.post('/cases/:id/documents', requireAuth, loadCase, requireCaseAccess, docs.upload.single('file'), docs.uploadDocument);
 api.get('/cases/:id/documents/:docId', requireAuth, loadCase, requireCaseAccess, docs.viewDocument);
-api.delete('/cases/:id/documents/:docId', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, docs.deleteDocument);
+api.delete('/cases/:id/documents/:docId', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, docs.deleteDocument);
 
 // ---- Remote Clinical Consultations (US-NUR / US-DOC / US-CRD) ----
-api.post('/cases/:id/vitals', requireRole('nurse'), loadCase, requireCaseAccess, clinical.saveVitals);
-api.post('/cases/:id/intake-complete', requireRole('nurse'), loadCase, requireCaseAccess, clinical.completeIntake);
-api.post('/cases/:id/schedule', requireRole('coordinator'), loadCase, requireCaseAccess, clinical.schedule);
-api.patch('/cases/:id/meet-link', requireRole('coordinator'), loadCase, requireCaseAccess, clinical.setMeetLink);
+api.post('/cases/:id/vitals', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, clinical.saveVitals);
+api.post('/cases/:id/intake-complete', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, clinical.completeIntake);
+api.post('/cases/:id/schedule', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, clinical.schedule);
+api.patch('/cases/:id/meet-link', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, clinical.setMeetLink);
 api.post('/cases/:id/start', requireRole('doctor'), loadCase, requireCaseAccess, clinical.startConsultation);
 api.post('/cases/:id/notes', requireRole('doctor'), loadCase, requireCaseAccess, clinical.saveNotes);
 api.post('/cases/:id/report', requireRole('doctor'), loadCase, requireCaseAccess, clinical.submitReport);
-api.post('/cases/:id/release', requireRole('coordinator'), loadCase, requireCaseAccess, clinical.releaseReport);
+api.post('/cases/:id/release', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, clinical.releaseReport);
 api.get('/cases/:id/parent-context', requireAuth, loadCase, requireCaseAccess, clinical.parentContext);
-api.get('/formulary', requireRole('doctor', 'coordinator', 'admin'), clinical.listFormulary);
+api.get('/formulary', requireRole('doctor', 'nurse', 'coordinator', 'admin'), clinical.listFormulary);
 api.post('/cases/:id/prescriptions', requireRole('doctor'), loadCase, requireCaseAccess, clinical.addPrescription);
 
 // ---- Remote Magic-link review (no auth; token is the credential) ----
@@ -163,23 +163,23 @@ api.post('/review/:token/request-info', reviewLimiter, review.requestInfo);
 api.get('/review/:token/documents/:docId', reviewLimiter, review.reviewDocument);
 
 // ---- Case Portal Enhancements (DEC-056: AI Summary, Reports Checklist, Multi-Round Reviews, Final Report) ----
-api.post('/cases/:id/ai-summary/generate', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.generateAiSummary);
-api.put('/cases/:id/ai-summary', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.updateAiSummary);
-api.post('/cases/:id/ai-summary/approve', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.approveAiSummary);
+api.post('/cases/:id/ai-summary/generate', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.generateAiSummary);
+api.put('/cases/:id/ai-summary', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.updateAiSummary);
+api.post('/cases/:id/ai-summary/approve', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.approveAiSummary);
 
-api.post('/cases/:id/reports-requests', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.createReportsRequest);
+api.post('/cases/:id/reports-requests', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.createReportsRequest);
 api.get('/cases/:id/reports-requests', requireAuth, loadCase, requireCaseAccess, caseEnhancements.listReportsRequests);
 api.patch('/cases/:id/reports-requests/:reqId/item', requireAuth, loadCase, requireCaseAccess, caseEnhancements.updateReportsRequestItem);
 
-api.post('/cases/:id/reviews/dispatch', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.dispatchCaseReview);
+api.post('/cases/:id/reviews/dispatch', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.dispatchCaseReview);
 api.get('/cases/:id/reviews', requireAuth, loadCase, requireCaseAccess, caseEnhancements.listCaseReviews);
 
-api.put('/cases/:id/final-report', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.saveFinalReportDraft);
-api.post('/cases/:id/final-report/publish', requireRole('coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.publishFinalReport);
+api.put('/cases/:id/final-report', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.saveFinalReportDraft);
+api.post('/cases/:id/final-report/publish', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, caseEnhancements.publishFinalReport);
 api.get('/cases/:id/report/pdf', requireAuth, loadCase, requireCaseAccess, caseEnhancements.downloadReportPdf);
 
 // ---- Bridge 1: Online Intake ➔ In-person Clinic (DEC-056) ----
-api.post('/cases/:id/refer-to-hospital', requireRole('coordinator', 'admin', 'nurse'), loadCase, requireCaseAccess, bridge.referToHospital);
+api.post('/cases/:id/refer-to-hospital', requireRole('nurse', 'coordinator', 'admin'), loadCase, requireCaseAccess, bridge.referToHospital);
 
 // ---- ALO Admin (US-ADM) ----
 api.get('/admin/staff', requireRole('admin'), admin.listStaff);
@@ -275,10 +275,10 @@ api.get('/public/reports-request/:token', reviewLimiter, caseEnhancements.getPub
 api.post('/public/reports-request/:token/upload', reviewLimiter, docs.upload.single('file'), caseEnhancements.uploadPublicReportsRequest);
 
 // ---- Bridge 2: Saudi Hospital ➔ Global Specialist Second Opinion (DEC-056) ----
-api.get('/staff/intl-opinions', requireAuth, requireRole('coordinator', 'admin'), requireALOStaff, bridge.listIntlOpinionsForStaff);
-api.post('/staff/intl-opinions/:id/dispatch', requireRole('coordinator', 'admin'), requireALOStaff, bridge.dispatchIntlOpinion);
-api.get('/staff/intl-specialists', requireAuth, requireRole('coordinator', 'admin'), requireALOStaff, bridge.listSpecialistDirectory);
-api.post('/staff/intl-specialists', requireRole('coordinator', 'admin'), requireALOStaff, bridge.createSpecialistDirectoryItem);
+api.get('/staff/intl-opinions', requireAuth, requireRole('nurse', 'coordinator', 'admin'), requireALOStaff, bridge.listIntlOpinionsForStaff);
+api.post('/staff/intl-opinions/:id/dispatch', requireRole('nurse', 'coordinator', 'admin'), requireALOStaff, bridge.dispatchIntlOpinion);
+api.get('/staff/intl-specialists', requireAuth, requireRole('nurse', 'coordinator', 'admin'), requireALOStaff, bridge.listSpecialistDirectory);
+api.post('/staff/intl-specialists', requireRole('nurse', 'coordinator', 'admin'), requireALOStaff, bridge.createSpecialistDirectoryItem);
 
 api.get('/review/intl/:token', reviewLimiter, bridge.openIntlReview);
 api.get('/review/intl/:token/documents/:docId', reviewLimiter, bridge.reviewIntlDocument);

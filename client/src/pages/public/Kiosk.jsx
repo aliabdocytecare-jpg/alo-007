@@ -5,7 +5,7 @@ import { useI18n } from '../../lib/i18n';
 import { Msg, PasswordInput } from '../../components/ui';
 
 export default function Kiosk() {
-  const { t, toggle } = useI18n();
+  const { t, toggle, lang } = useI18n();
   const [pin, setPin] = useState(localStorage.getItem('alodoc_kiosk_pin') || '');
   const [paired, setPaired] = useState(false);
   const [hospital, setHospital] = useState(null);
@@ -88,11 +88,30 @@ export default function Kiosk() {
 
   if (!paired) {
     return (
-      <div className="wrap" style={{ maxWidth: 480, marginTop: 40 }}>
+      <div className="wrap" style={{ maxWidth: 520, marginTop: 40 }}>
         {header}
+        {/* DEC-073: Dropping Physical Tablet Kiosks -> Streamlined Hospital Reception Web Desk */}
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '16px', marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 6px', color: '#1e40af' }}>
+            ℹ️ {lang === 'ar' ? 'مكتب الاستقبال السحابي للمستشفى' : 'Hospital Reception Web Desk'}
+          </h3>
+          <p style={{ margin: '0 0 12px', fontSize: '0.9rem', color: '#1e3a8a' }}>
+            {lang === 'ar'
+              ? 'تم استبدال أجهزة الكشك اللوحية بمكتب الاستقبال السحابي المباشر. يقوم موظفو الاستقبال بتسجيل وصول المرضى مباشرة عبر المتصفح.'
+              : 'Physical tablet kiosk pairing has been retired. Clinic check-ins and queue management are conducted directly through the Hospital Reception Web Desk.'}
+          </p>
+          <a
+            href="/hospital"
+            className="btn"
+            style={{ background: '#2563eb', color: '#fff', textDecoration: 'none', display: 'inline-block', fontWeight: 600 }}
+          >
+            {lang === 'ar' ? 'الانتقال إلى مكتب الاستقبال' : 'Open Hospital Reception Desk →'}
+          </a>
+        </div>
+
         <section className="box">
-          <h2>Pair Kiosk Tablet</h2>
-          <p className="muted">Enter the 6-digit hospital kiosk PIN to activate this check-in tablet.</p>
+          <h2>Pair Kiosk Tablet (Legacy Standby)</h2>
+          <p className="muted">Enter the 6-digit hospital kiosk PIN to activate standby check-in display.</p>
           <Msg err={err} />
           <form onSubmit={doPair}>
             <div style={{ margin: '12px 0' }}>

@@ -1,7 +1,8 @@
 // US-PAT-009/010/011/012/013 — unified patient case view.
 // BR-016 patient-facing labels only; BR-023 Meet window; BR-015 release gating.
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { api, fmtDate } from '../../lib/api';
+import { api, fmtDate, errMsg } from '../../lib/api';
 import { useI18n } from '../../lib/i18n';
 import { Msg, StatusBadge, Timeline, DocumentList, FileUploader, useAsync } from '../../components/ui';
 import CaseStepper from '../../components/CaseStepper';
@@ -11,6 +12,33 @@ export default function CaseView() {
   const { t, lang } = useI18n();
   const { data: c, err, loading, reload } = useAsync(() => api.get(`/cases/${id}?lang=${lang}`).then(r => r.data), [id, lang]);
   const { data: catalog } = useAsync(() => api.get('/catalog').then(r => r.data));
+
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('Schedule Conflict');
+  const [cancelDetail, setCancelDetail] = useState('');
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelErr, setCancelErr] = useState('');
+
+  const doCancelCase = async () => {
+    setCancelErr('');
+    setCancelBusy(true);
+    try {
+      const isWorsening = cancelReason === 'Worsening Symptoms / Medical Emergency';
+      const finalReason = cancelReason === 'Other'
+        ? (cancelDetail.trim() || 'Other')
+        : (cancelDetail.trim() ? `${cancelReason}: ${cancelDetail}` : cancelReason);
+      await api.post(`/cases/${c.id}/cancel`, {
+        reason: finalReason,
+        worsening: isWorsening
+      });
+      setCancelOpen(false);
+      reload();
+    } catch (e) {
+      setCancelErr(errMsg(e));
+    } finally {
+      setCancelBusy(false);
+    }
+  };
 
   if (loading && !c) return <p>{t('loading')}</p>;
   if (err) return <Msg err={err} />;
@@ -23,6 +51,12 @@ export default function CaseView() {
     : c.service_type === 'SERVICE'
       ? (catalog?.services?.find(s => s.code === c.service_subtype)?.[lang === 'ar' ? 'name_ar' : 'name_en'] || c.service_subtype)
       : null;
+
+  const canCancel = !['COMPLETED', 'CANCELLED', 'FOLLOW_UP'].includes(c.status);
+  const isScheduled = !!c.consultation?.scheduled_at;
+  const hoursUntilAppt = isScheduled ? (new Date(c.consultation.scheduled_at) - new Date()) / (1000 * 60 * 60) : null;
+  const isMoreThan24h = hoursUntilAppt === null || hoursUntilAppt > 24;
+  const isWorsening = cancelReason === 'Worsening Symptoms / Medical Emergency';
 
   return (
     <div>
@@ -39,6 +73,109 @@ export default function CaseView() {
         {/* DEC-032: SERVICE cases have no medical report — never promise one. */}
         <strong>{t('nextStep')}:</strong> {c.service_type === 'SERVICE' && c.status === 'COMPLETED' ? t('serviceCompleted') : c.next_step}
       </section>
+
+      {/* WP4: Patient Self-Service Cancellation */}
+      {canCancel && (
+        <section className="box no-print" style={{ borderLeft: '4px solid #ef4444' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <h3 style={{ margin: 0, color: '#991b1b', fontSize: '1rem' }}>
+                {lang === 'ar' ? 'إلغاء الموعد أو الطلب' : 'Cancel Appointment / Case'}
+              </h3>
+              <p className="muted" style={{ margin: '4px 0 0', fontSize: '0.85rem' }}>
+                {isScheduled
+                  ? (hoursUntilAppt > 24
+                    ? (lang === 'ar' ? 'متبقي أكثر من 24 ساعة: يحق لك استرداد الرسوم وإعادة فتح الموعد.' : 'More than 24 hours until appointment: 100% refund eligible and slot released.')
+                    : (lang === 'ar' ? 'متبقي أقل من 24 ساعة على الموعد: تنطبق سياسة الإلغاء المتأخر.' : 'Within 24-hour cutoff: Late cancellation policy applies.'))
+                  : (lang === 'ar' ? 'يمكنك إلغاء هذا الطلب قبل بدء المراجعة الطبية.' : 'You can cancel this case before clinical processing is completed.')}
+              </p>
+            </div>
+            {!cancelOpen && (
+              <button
+                onClick={() => setCancelOpen(true)}
+                style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#b91c1c', fontWeight: 600 }}
+              >
+                {lang === 'ar' ? 'إلغاء الموعد' : 'Cancel Case'}
+              </button>
+            )}
+          </div>
+
+          {cancelOpen && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #fee2e2' }}>
+              <Msg err={cancelErr} />
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ display: 'block', fontWeight: 600, fontSize: '0.9rem', marginBottom: 4 }}>
+                  {lang === 'ar' ? 'سبب الإلغاء:' : 'Reason for Cancellation:'}
+                </label>
+                <select
+                  value={cancelReason}
+                  onChange={e => setCancelReason(e.target.value)}
+                  style={{ width: '100%', maxWidth: 420 }}
+                >
+                  <option value="Schedule Conflict">Schedule Conflict / تعارض في المواعيد</option>
+                  <option value="Found Alternate Care / Provider">Found Alternate Care / الحصول على رعاية بديلة</option>
+                  <option value="Condition Improved">Condition Improved / تحسن الحالة الصحية</option>
+                  <option value="Worsening Symptoms / Medical Emergency">🚨 Worsening Symptoms / Medical Emergency (تدهور الأعراض / طوارئ)</option>
+                  <option value="Other">Other Reason / سبب آخر</option>
+                </select>
+              </div>
+
+              {isWorsening && (
+                <div style={{ background: '#fef2f2', border: '2px solid #ef4444', color: '#991b1b', padding: '12px 14px', borderRadius: '8px', marginBottom: 12 }}>
+                  <strong>🚨 {lang === 'ar' ? 'تنبيه طوارئ حاد' : 'URGENT SAFETY ALERT'}:</strong>
+                  <p style={{ margin: '4px 0 8px', fontSize: '0.88rem' }}>
+                    {lang === 'ar'
+                      ? 'إذا كانت حالتك تسوء أو تعاني من أعراض حرجة، يرجى الاتصال فوراً بالإسعاف 997 أو التوجه لأقرب طوارئ.'
+                      : 'If you are experiencing severe, acute, or worsening medical symptoms, immediately call 997 (Saudi Red Crescent) or proceed to the nearest emergency department.'}
+                  </p>
+                  <a
+                    href="tel:997"
+                    style={{
+                      background: '#dc2626',
+                      color: '#fff',
+                      padding: '6px 14px',
+                      borderRadius: '6px',
+                      fontWeight: 700,
+                      textDecoration: 'none',
+                      display: 'inline-block',
+                      fontSize: '0.88rem'
+                    }}
+                  >
+                    📞 Call 997 Immediately
+                  </a>
+                </div>
+              )}
+
+              <div style={{ marginBottom: 10 }}>
+                <input
+                  type="text"
+                  placeholder={lang === 'ar' ? 'ملاحظة إضافية (اختياري)...' : 'Additional details (optional)...'}
+                  value={cancelDetail}
+                  onChange={e => setCancelDetail(e.target.value)}
+                  style={{ width: '100%', maxWidth: 420 }}
+                />
+              </div>
+
+              <div className="row" style={{ gap: 8 }}>
+                <button
+                  onClick={doCancelCase}
+                  disabled={cancelBusy}
+                  style={{ background: '#dc2626', borderColor: '#dc2626', color: '#fff', fontWeight: 600 }}
+                >
+                  {cancelBusy ? t('loading') : (lang === 'ar' ? 'تأكيد الإلغاء' : 'Confirm Cancellation')}
+                </button>
+                <button
+                  onClick={() => setCancelOpen(false)}
+                  className="btn"
+                  disabled={cancelBusy}
+                >
+                  {lang === 'ar' ? 'تراجع' : 'Keep Case'}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {c.document_request_note && (
         <section className="box">

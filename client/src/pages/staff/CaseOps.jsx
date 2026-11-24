@@ -20,7 +20,7 @@ function useAction(reload) {
   return [state, run];
 }
 
-function CoordinatorPanel({ c, reload }) {
+function NurseDesk({ c, reload }) {
   const { t } = useI18n();
   const [state, run] = useAction(reload);
   const [directory, setDirectory] = useState([]);
@@ -31,8 +31,11 @@ function CoordinatorPanel({ c, reload }) {
   const [clinic, setClinic] = useState({ name: '', address: '' });
   const [meet, setMeet] = useState('');
   const [spec, setSpec] = useState({ name: '', phone: '' });
+  const [tripartite, setTripartite] = useState(false);
+  const [triSpecialist, setTriSpecialist] = useState({ name: '', phone: '' });
   const [cancelReason, setCancelReason] = useState('');
   const [escNote, setEscNote] = useState('');
+  const [v, setV] = useState({ blood_pressure: '', heart_rate: '', temperature: '', weight: '', height: '', spo2: '', nursing_notes: '' });
 
   useEffect(() => { api.get('/staff/directory').then(r => setDirectory(r.data)).catch(() => {}); }, []);
 
@@ -43,12 +46,114 @@ function CoordinatorPanel({ c, reload }) {
   const reportText = c.consultation?.final_report
     || (c.review?.status === 'SUBMITTED' ? `FINDINGS:\n${c.review.findings}\n\nRECOMMENDATION:\n${c.review.recommendation}` : null);
 
+  const required = REQUIRED_DOCS[c.service_type] || [];
+  const have = new Set((c.documents || []).map(d => d.category));
+  const readOnlyIntake = c.intake_completed;
+
+  // High-Risk Triage Detection (Cardiology, Oncology, Acute/Emergency Symptoms)
+  const isHighRisk = ['Cardiology', 'Oncology'].includes(c.specialty)
+    || (c.history?.symptoms && /chest|breath|shortness|stroke|severe|acute|bleeding/i.test(c.history.symptoms))
+    || (c.reason && /urgent|emergency|chest|severe|unconscious/i.test(c.reason));
+
   return (
     <section className="box">
-      <h2>{t('coordinator')} — {t('actions')}</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        <h2 style={{ margin: 0 }}>🩺 ALO Nurse Desk — Unified Care Stream Command</h2>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <span className="badge" style={{ background: '#0284c7', color: '#fff', fontSize: '0.8rem', padding: '4px 8px', borderRadius: '4px' }}>
+            ✓ Iqama / Saudi ID Verified
+          </span>
+          <span className="badge" style={{ background: '#059669', color: '#fff', fontSize: '0.8rem', padding: '4px 8px', borderRadius: '4px' }}>
+            SCFHS: {c.specialty || 'General Practice'} Privileges Verified
+          </span>
+        </div>
+      </div>
       <ActionMsg state={state} />
 
-      <div style={{ background: '#f8f8f8', borderLeft: '4px solid #111', padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
+      {/* Clinical Triage Protocol Banner */}
+      {isHighRisk ? (
+        <div style={{ background: '#fef2f2', border: '1px solid #f87171', color: '#991b1b', padding: '12px 16px', borderRadius: '8px', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: '1.25rem' }}>🚨</span>
+            <div>
+              <strong>MANDATORY CLINICAL CALL REQUIRED</strong> — High-risk presentation flagged ({c.specialty || 'Critical symptoms'}). Contact patient directly before doctor assignment:
+              <a href={`tel:${c.patient?.phone}`} style={{ color: '#b91c1c', fontWeight: 700, marginLeft: 6 }}>{c.patient?.phone}</a>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', padding: '8px 12px', borderRadius: '6px', marginBottom: 14, fontSize: '0.88rem' }}>
+          💬 <strong>Light-Touch Protocol</strong> — Standard non-emergent case. WhatsApp coordination sufficient.
+        </div>
+      )}
+
+      {/* Clinical Nursing Intake & Vitals Section */}
+      <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '14px', marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a' }}>📋 Clinical Triage & Intake Vitals</h3>
+          <span className="badge" style={{ background: readOnlyIntake ? '#dcfce7' : '#fef3c7', color: readOnlyIntake ? '#166534' : '#92400e', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>
+            {readOnlyIntake ? '✓ Intake Completed' : 'Intake In Progress'}
+          </span>
+        </div>
+
+        {/* Required Documents Checklist */}
+        <p style={{ margin: '4px 0 8px', fontSize: '0.88rem', fontWeight: 600, color: '#475569' }}>Required Documents Checklist:</p>
+        <table style={{ marginBottom: 12 }}>
+          <tbody>
+            {required.map(cat => (
+              <tr key={cat}>
+                <td style={{ padding: '4px 8px' }}>{cat}</td>
+                <td style={{ padding: '4px 8px' }}>{have.has(cat) ? <span style={{ color: '#16a34a', fontWeight: 600 }}>✓ Uploaded</span> : <strong style={{ color: '#dc2626' }}>[Missing]</strong>}</td>
+              </tr>
+            ))}
+            {!required.length && <tr><td className="muted">{t('noItems')}</td></tr>}
+          </tbody>
+        </table>
+
+        {/* Vitals Form */}
+        <div className="grid2">
+          <Field label={t('bp')}><input value={v.blood_pressure} onChange={e => setV({ ...v, blood_pressure: e.target.value })} placeholder="120/80" /></Field>
+          <Field label={t('hr')}><input type="number" value={v.heart_rate} onChange={e => setV({ ...v, heart_rate: e.target.value })} placeholder="72" /></Field>
+          <Field label={t('temp')}><input type="number" step="0.1" value={v.temperature} onChange={e => setV({ ...v, temperature: e.target.value })} placeholder="37.0" /></Field>
+          <Field label={t('weight')}><input type="number" step="0.1" value={v.weight} onChange={e => setV({ ...v, weight: e.target.value })} placeholder="70" /></Field>
+          <Field label={t('height')}><input type="number" value={v.height} onChange={e => setV({ ...v, height: e.target.value })} placeholder="170" /></Field>
+          <Field label={t('spo2')}><input type="number" value={v.spo2} onChange={e => setV({ ...v, spo2: e.target.value })} placeholder="98" /></Field>
+        </div>
+        <Field label={t('nursingNotes')}><textarea value={v.nursing_notes} onChange={e => setV({ ...v, nursing_notes: e.target.value })} placeholder="Enter clinical observations, triage notes, or medical history verification..." /></Field>
+        <div className="row" style={{ marginTop: 10, gap: 10 }}>
+          <button onClick={() => run(() => api.post(`/cases/${c.id}/vitals`, v), 'Vitals saved')} className="btn">{t('save')} Vitals</button>
+          {!readOnlyIntake && (
+            <button
+              onClick={() => run(async () => {
+                if (v.blood_pressure || v.heart_rate || v.temperature || v.weight || v.height || v.spo2 || v.nursing_notes) {
+                  await api.post(`/cases/${c.id}/vitals`, v);
+                }
+                await api.post(`/cases/${c.id}/intake-complete`);
+              }, 'Triage intake completed!')}
+              style={{ background: '#059669', borderColor: '#059669', color: '#fff', fontWeight: 600, padding: '6px 14px' }}
+            >
+              ✓ Complete Triage Intake
+            </button>
+          )}
+        </div>
+
+        {!!c.vitals?.length && (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ margin: '4px 0', fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>Recorded Vitals History:</p>
+            <table>
+              <thead><tr><th>{t('time')}</th><th>{t('bp')}</th><th>{t('hr')}</th><th>{t('temp')}</th><th>{t('spo2')}</th><th>{t('nursingNotes')}</th></tr></thead>
+              <tbody>
+                {c.vitals.map(x => (
+                  <tr key={x.id}><td>{fmtDate(x.created_at)}</td><td>{x.blood_pressure || '—'}</td><td>{x.heart_rate ?? '—'}</td><td>{x.temperature ?? '—'}</td><td>{x.spo2 ?? '—'}</td><td>{x.nursing_notes || '—'}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Case Progression & Actions */}
+      <div style={{ background: '#f8f8f8', borderLeft: '4px solid #0284c7', padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <strong>Case Status:</strong> <StatusBadge status={c.status} />
         </div>
@@ -56,24 +161,17 @@ function CoordinatorPanel({ c, reload }) {
           <p style={{ margin: '4px 0 0' }}>Review initial documents and clinical history. Click <strong>"{t('unassigned')} →"</strong> to mark ready for staff assignment, or request additional documents.</p>
         )}
         {c.status === 'READY_FOR_ASSIGNMENT' && (
-          <p style={{ margin: '4px 0 0' }}>Assign a dedicated Nurse or Doctor below, or refer the case directly to a Saudi partner day-clinic.</p>
+          <p style={{ margin: '4px 0 0' }}>Assign a dedicated Doctor / Specialist below, or refer the case directly to a Saudi partner day-clinic.</p>
         )}
         {c.status === 'SPECIALIST_ASSIGNED' && (
-          <p style={{ margin: '4px 0 0' }}>Staff / Specialist assigned. Coordinate appointment schedule, review findings, or publish final report.</p>
+          <p style={{ margin: '4px 0 0' }}>Doctor assigned. Coordinate appointment schedule, monitor opinion review, or release final report.</p>
         )}
       </div>
 
-      {c.intake_completed && !c.assignments?.some(a => a.role === 'doctor') && (
-        <div style={{ background: '#f3e8ff', border: '1px solid #d8b4fe', padding: '10px 14px', borderRadius: '6px', marginBottom: 14, color: '#6b21a8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>🔔</span>
-          <div>Nurse triage & vitals intake completed! Please assign a Doctor / Specialist below to proceed with medical review.</div>
-        </div>
-      )}
-
       {!c.payment_confirmed && ['SUBMITTED', 'INITIAL_REVIEW'].includes(c.status) && (
-        <div className="row">
+        <div className="row" style={{ marginTop: 8 }}>
           <input style={{ maxWidth: 320 }} placeholder={t('paymentNote')} value={payNote} onChange={e => setPayNote(e.target.value)} />
-          <button onClick={() => run(() => api.post(`/cases/${c.id}/confirm-payment`, { note: payNote }))}>{t('confirmPayment')}</button>
+          <button onClick={() => run(() => api.post(`/cases/${c.id}/confirm-payment`, { note: payNote }))}>{t('confirmPayment')} & Send Link</button>
         </div>
       )}
       {c.payment_confirmed && <p className="muted">[{t('confirmPayment')}: ✓ {c.payment_note}]</p>}
@@ -93,23 +191,51 @@ function CoordinatorPanel({ c, reload }) {
 
       {['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status) && (
         <div className="row" style={{ marginTop: 8 }}>
-          <select data-testid="assign-staff" style={{ maxWidth: 320 }} value={staffId} onChange={e => setStaffId(e.target.value)}>
-            <option value="">{t('assign')} — {t('nurse')} / {t('doctor')}</option>
-            {directory.filter(s => ['nurse', 'doctor'].includes(s.role)).map(s => (
-              <option key={s.id} value={s.id}>{s.full_name} ({t(s.role)}{s.specialty ? ` · ${s.specialty}` : ''})</option>
+          <select data-testid="assign-staff" style={{ maxWidth: 360 }} value={staffId} onChange={e => setStaffId(e.target.value)}>
+            <option value="">Assign Doctor — SCFHS Privileged Specialist</option>
+            {directory.filter(s => ['doctor', 'nurse'].includes(s.role)).map(s => (
+              <option key={s.id} value={s.id}>{s.full_name} ({t(s.role)}{s.specialty ? ` · SCFHS: ${s.specialty}` : ''})</option>
             ))}
           </select>
           <button disabled={!staffId} onClick={() => run(() => api.post(`/cases/${c.id}/assign`, { staff_id: staffId }))}>{t('assign')}</button>
         </div>
       )}
 
-      {c.service_type === 'CONSULTATION' && c.status === 'SPECIALIST_ASSIGNED' && (
-        <div style={{ marginTop: 8 }}>
-          <div className="row">
-            <input style={{ maxWidth: 240 }} type="datetime-local" value={schedAt} onChange={e => setSchedAt(e.target.value)} />
-            <input style={{ maxWidth: 200 }} placeholder={t('clinicName')} value={clinic.name} onChange={e => setClinic({ ...clinic, name: e.target.value })} />
-            <input style={{ maxWidth: 240 }} placeholder={t('clinicAddress')} value={clinic.address} onChange={e => setClinic({ ...clinic, address: e.target.value })} />
-            <button disabled={!schedAt} onClick={() => run(() => api.post(`/cases/${c.id}/schedule`, { scheduled_at: new Date(schedAt).toISOString(), clinic_name: clinic.name, clinic_address: clinic.address }))}>{t('schedule')}</button>
+      {c.service_type === 'CONSULTATION' && ['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status) && (
+        <div style={{ marginTop: 12, border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px', background: '#fdfdfe' }}>
+          <h4 style={{ margin: '0 0 8px' }}>📅 Stream 2: Joint Online Consultation Scheduling</h4>
+          <div className="grid2">
+            <Field label="Appointment Date & Time"><input type="datetime-local" value={schedAt} onChange={e => setSchedAt(e.target.value)} /></Field>
+            <Field label="Google Meet Room Link"><input placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meet} onChange={e => setMeet(e.target.value)} dir="ltr" /></Field>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <label style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={tripartite} onChange={e => setTripartite(e.target.checked)} />
+              Enable Live Tripartite Session (Saudi Hospital Doctor + Indian Specialist)
+            </label>
+            {tripartite && (
+              <div className="grid2" style={{ marginTop: 8 }}>
+                <Field label="Indian Specialist Name"><input placeholder="e.g. Dr. Ramesh Patel" value={triSpecialist.name} onChange={e => setTriSpecialist({ ...triSpecialist, name: e.target.value })} /></Field>
+                <Field label="Indian Specialist WhatsApp"><input placeholder="+91XXXXXXXXXX" value={triSpecialist.phone} onChange={e => setTriSpecialist({ ...triSpecialist, phone: e.target.value })} dir="ltr" /></Field>
+              </div>
+            )}
+          </div>
+          <div className="row" style={{ marginTop: 10 }}>
+            <button
+              disabled={!schedAt}
+              onClick={() => run(() => api.post(`/cases/${c.id}/schedule`, {
+                scheduled_at: new Date(schedAt).toISOString(),
+                clinic_name: clinic.name || 'ALO Telehealth Room',
+                clinic_address: clinic.address || 'Online',
+                meet_url: meet,
+                is_tripartite: tripartite,
+                specialist_name: triSpecialist.name,
+                specialist_phone: triSpecialist.phone
+              }), 'Consultation scheduled & video room dispatched')}
+              style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontWeight: 600 }}
+            >
+              Confirm Consultation Slot
+            </button>
           </div>
         </div>
       )}
@@ -123,8 +249,8 @@ function CoordinatorPanel({ c, reload }) {
       )}
 
       {c.service_type === 'GMO' && ['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status) && (
-        <div style={{ marginTop: 8 }}>
-          <h3>{t('assignSpecialist')} (Multi-Round Review)</h3>
+        <div style={{ marginTop: 12, border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px', background: '#fdfdfe' }}>
+          <h4 style={{ margin: '0 0 8px' }}>🌍 Stream 1: Written Second Opinion (Indian Specialist Dispatch)</h4>
           <div className="row">
             <input style={{ maxWidth: 200 }} placeholder={t('specialistName')} value={spec.name} onChange={e => setSpec({ ...spec, name: e.target.value })} />
             <input style={{ maxWidth: 180 }} placeholder="+91XXXXXXXXXX" value={spec.phone} onChange={e => setSpec({ ...spec, phone: e.target.value })} dir="ltr" />
@@ -139,10 +265,10 @@ function CoordinatorPanel({ c, reload }) {
         </div>
       )}
 
-      {/* Bridge 1: Refer to Saudi Hospital Clinic */}
+      {/* Bridge 1: Refer to Saudi Hospital Day-Clinic (Stream 3) */}
       {['INITIAL_REVIEW', 'READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status) && (
-        <div style={{ marginTop: 14, border: '1px solid #000', padding: 12, background: '#fafafa' }}>
-          <h3>🏥 {t('referHospital')} (Bridge 1)</h3>
+        <div style={{ marginTop: 14, border: '1px solid #cbd5e1', borderRadius: '8px', padding: 12, background: '#fafafa' }}>
+          <h3>🏥 Stream 3: Refer to Saudi Hospital Partner Day-Clinic</h3>
           {c.hospital_handoff ? (
             <div>
               <p>✓ <strong>Referred to:</strong> {c.hospital_handoff.hospital_name || c.hospital_handoff.hospital_id}</p>
@@ -156,7 +282,7 @@ function CoordinatorPanel({ c, reload }) {
       )}
 
       {/* Bilingual AI Summary Panel */}
-      <div style={{ marginTop: 14, border: '1px solid #000', padding: 12 }}>
+      <div style={{ marginTop: 14, border: '1px solid #cbd5e1', borderRadius: '8px', padding: 12 }}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h3>🤖 {t('aiSummary')} [{c.ai_summary_status || 'none'}]</h3>
           <div className="row">
@@ -182,7 +308,7 @@ function CoordinatorPanel({ c, reload }) {
       </div>
 
       {/* Itemized Reports Request Panel */}
-      <div style={{ marginTop: 14, border: '1px solid #000', padding: 12 }}>
+      <div style={{ marginTop: 14, border: '1px solid #cbd5e1', borderRadius: '8px', padding: 12 }}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h3>📋 {t('reportsChecklist')}</h3>
           <ItemizedReportsModal caseId={c.id} onRequested={reload} />
@@ -201,21 +327,21 @@ function CoordinatorPanel({ c, reload }) {
 
       {c.service_type === 'SERVICE' && ['SPECIALIST_ASSIGNED', 'IN_PROGRESS'].includes(c.status) && (
         <div className="row" style={{ marginTop: 8 }}>
-          {/* DEC-031: SERVICE cases complete here — previously API-only (P3 dead end). */}
           <button onClick={() => { if (window.confirm(t('confirmSubmit'))) run(() => api.patch(`/cases/${c.id}/status`, { to: 'COMPLETED', version: c.version, note: 'Service delivered' })); }}>{t('completeService')}</button>
         </div>
       )}
 
+      {/* Report Preview & Final Release to Patient */}
       {c.status === 'REPORT_SUBMITTED' && reportText && (
-        <div style={{ marginTop: 8 }}>
-          <h3>{t('reportPreview')}</h3>
-          <pre className="report">{reportText}</pre>
-          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+        <div style={{ marginTop: 14, border: '2px solid #16a34a', borderRadius: '8px', padding: 14, background: '#f0fdf4' }}>
+          <h3 style={{ margin: '0 0 8px', color: '#166534' }}>📄 Final Medical Opinion Report Preview</h3>
+          <pre className="report" style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '12px' }}>{reportText}</pre>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
             <button
-              style={{ background: '#16a34a', borderColor: '#16a34a', color: '#fff', fontWeight: 700, padding: '8px 18px', fontSize: '0.95rem' }}
+              style={{ background: '#16a34a', borderColor: '#16a34a', color: '#fff', fontWeight: 700, padding: '10px 22px', fontSize: '1rem', borderRadius: '6px' }}
               onClick={() => { if (window.confirm(t('confirmSubmit'))) run(() => api.post(`/cases/${c.id}/release`)); }}
             >
-              ✓ {t('release')}
+              ✓ Release Final Report to Patient
             </button>
             <a
               className="btn"
@@ -245,72 +371,9 @@ function CoordinatorPanel({ c, reload }) {
   );
 }
 
-function NursePanel({ c, reload }) {
-  const { t } = useI18n();
-  const [state, run] = useAction(reload);
-  const [v, setV] = useState({ blood_pressure: '', heart_rate: '', temperature: '', weight: '', height: '', spo2: '', nursing_notes: '' });
-  const required = REQUIRED_DOCS[c.service_type] || [];
-  const have = new Set((c.documents || []).map(d => d.category));
-  const readOnly = c.intake_completed;
-
-  return (
-    <section className="box">
-      <h2>{t('nurse')} — {t('vitals')}</h2>
-      <ActionMsg state={state} />
-      {readOnly && (
-        <div style={{ background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', padding: '10px 14px', borderRadius: '6px', marginBottom: '14px', fontWeight: 600 }}>
-          ✓ {t('intakeDone')} — Case forwarded to Coordinator for Doctor assignment
-        </div>
-      )}
-      <h3>{t('checklist')}</h3>
-      <table>
-        <tbody>
-          {required.map(cat => (
-            <tr key={cat}><td>{cat}</td><td>{have.has(cat) ? `[${t('uploaded')}]` : <strong>[{t('missing')}]</strong>}</td></tr>
-          ))}
-          {!required.length && <tr><td className="muted">{t('noItems')}</td></tr>}
-        </tbody>
-      </table>
-      {!readOnly && (
-        <>
-          <div className="grid2">
-            <Field label={t('bp')}><input value={v.blood_pressure} onChange={e => setV({ ...v, blood_pressure: e.target.value })} placeholder="120/80" /></Field>
-            <Field label={t('hr')}><input type="number" value={v.heart_rate} onChange={e => setV({ ...v, heart_rate: e.target.value })} /></Field>
-            <Field label={t('temp')}><input type="number" step="0.1" value={v.temperature} onChange={e => setV({ ...v, temperature: e.target.value })} /></Field>
-            <Field label={t('weight')}><input type="number" step="0.1" value={v.weight} onChange={e => setV({ ...v, weight: e.target.value })} /></Field>
-            <Field label={t('height')}><input type="number" value={v.height} onChange={e => setV({ ...v, height: e.target.value })} /></Field>
-            <Field label={t('spo2')}><input type="number" value={v.spo2} onChange={e => setV({ ...v, spo2: e.target.value })} /></Field>
-          </div>
-          <Field label={t('nursingNotes')}><textarea value={v.nursing_notes} onChange={e => setV({ ...v, nursing_notes: e.target.value })} placeholder="Enter clinical observations or document review notes..." /></Field>
-          <div className="row" style={{ marginTop: 12, gap: 10 }}>
-            <button onClick={() => run(() => api.post(`/cases/${c.id}/vitals`, v))} className="btn">{t('save')}</button>
-            <button
-              onClick={() => run(async () => {
-                if (v.blood_pressure || v.heart_rate || v.temperature || v.weight || v.height || v.spo2 || v.nursing_notes) {
-                  await api.post(`/cases/${c.id}/vitals`, v);
-                }
-                await api.post(`/cases/${c.id}/intake-complete`);
-              }, 'Triage completed! Case forwarded to Coordinator for Doctor assignment')}
-              style={{ background: '#059669', borderColor: '#059669', color: '#fff', fontWeight: 600, padding: '8px 16px' }}
-            >
-              ✓ {t('completeIntakeAndForward')}
-            </button>
-          </div>
-        </>
-      )}
-      {!!c.vitals?.length && (
-        <table>
-          <thead><tr><th>{t('time')}</th><th>{t('bp')}</th><th>{t('hr')}</th><th>{t('temp')}</th><th>{t('spo2')}</th><th>{t('nursingNotes')}</th></tr></thead>
-          <tbody>
-            {c.vitals.map(x => (
-              <tr key={x.id}><td>{fmtDate(x.created_at)}</td><td>{x.blood_pressure || '—'}</td><td>{x.heart_rate ?? '—'}</td><td>{x.temperature ?? '—'}</td><td>{x.spo2 ?? '—'}</td><td>{x.nursing_notes || '—'}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </section>
-  );
-}
+// Aliases for backward compatibility
+const CoordinatorPanel = NurseDesk;
+const NursePanel = NurseDesk;
 
 function DoctorPanel({ c, reload }) {
   const { t } = useI18n();
@@ -666,8 +729,7 @@ export default function CaseOps() {
         {c.purpose && <p>{t('purpose')}: {c.purpose}</p>}
       </section>
 
-      {['coordinator', 'admin'].includes(role) && <CoordinatorPanel c={c} reload={reload} />}
-      {['nurse', 'admin'].includes(role) && <NursePanel c={c} reload={reload} />}
+      {['nurse', 'coordinator', 'admin'].includes(role) && <NurseDesk c={c} reload={reload} />}
       {['doctor', 'admin'].includes(role) && <DoctorPanel c={c} reload={reload} />}
 
       <section className="box">
@@ -678,11 +740,11 @@ export default function CaseOps() {
 
       <section className="box">
         <h2>{t('documents')}</h2>
-        <DocumentList caseId={c.id} documents={c.documents} canDelete={role === 'coordinator' || role === 'admin'} onChanged={reload} />
-        {['nurse', 'coordinator'].includes(role) && <FileUploader caseId={c.id} onUploaded={reload} />}
+        <DocumentList caseId={c.id} documents={c.documents} canDelete={['coordinator', 'nurse', 'admin'].includes(role)} onChanged={reload} />
+        {['nurse', 'coordinator', 'admin'].includes(role) && <FileUploader caseId={c.id} onUploaded={reload} />}
       </section>
 
-      {c.review && role !== 'nurse' && (
+      {c.review && (
         <section className="box">
           <h2>{t('intlReviews')} [{c.review.status}]</h2>
           {c.review.findings && <pre className="report">{`FINDINGS:\n${c.review.findings}\n\nRECOMMENDATION:\n${c.review.recommendation || ''}`}</pre>}

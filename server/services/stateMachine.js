@@ -29,29 +29,29 @@ export const NEXT_STEP = {
   CANCELLED:                { en: 'This case has been cancelled. Contact us if you need help.', ar: 'تم إلغاء هذه الحالة. تواصل معنا إذا احتجت مساعدة.' }
 };
 
-// Bible 5.3 — to_status -> allowed actor roles
+// Bible 5.3 — to_status -> allowed actor roles (Updated for Unified ALO Nurse Desk & Patient Self-Cancellation)
 export const TRANSITIONS = {
-  SUBMITTED:                { INITIAL_REVIEW: ['system', 'coordinator'] },
-  INITIAL_REVIEW:           { ADDITIONAL_INFO_REQUIRED: ['coordinator'], READY_FOR_ASSIGNMENT: ['coordinator', 'admin'] },
-  ADDITIONAL_INFO_REQUIRED: { INITIAL_REVIEW: ['system', 'coordinator'] },
-  READY_FOR_ASSIGNMENT:     { SPECIALIST_ASSIGNED: ['coordinator'], ADDITIONAL_INFO_REQUIRED: ['coordinator'] },
-  SPECIALIST_ASSIGNED:      { APPOINTMENT_SCHEDULED: ['coordinator'], IN_PROGRESS: ['doctor', 'coordinator'], REPORT_SUBMITTED: ['doctor', 'system'], UNDER_MEDICAL_REVIEW: ['system', 'doctor', 'coordinator'] },
-  APPOINTMENT_SCHEDULED:    { IN_PROGRESS: ['doctor', 'system', 'coordinator'] },
+  SUBMITTED:                { INITIAL_REVIEW: ['system', 'coordinator', 'nurse'] },
+  INITIAL_REVIEW:           { ADDITIONAL_INFO_REQUIRED: ['coordinator', 'nurse'], READY_FOR_ASSIGNMENT: ['coordinator', 'nurse', 'admin'] },
+  ADDITIONAL_INFO_REQUIRED: { INITIAL_REVIEW: ['system', 'coordinator', 'nurse'] },
+  READY_FOR_ASSIGNMENT:     { SPECIALIST_ASSIGNED: ['coordinator', 'nurse'], ADDITIONAL_INFO_REQUIRED: ['coordinator', 'nurse'] },
+  SPECIALIST_ASSIGNED:      { APPOINTMENT_SCHEDULED: ['coordinator', 'nurse'], IN_PROGRESS: ['doctor', 'coordinator', 'nurse'], REPORT_SUBMITTED: ['doctor', 'system'], UNDER_MEDICAL_REVIEW: ['system', 'doctor', 'coordinator', 'nurse'] },
+  APPOINTMENT_SCHEDULED:    { IN_PROGRESS: ['doctor', 'system', 'coordinator', 'nurse'] },
   IN_PROGRESS:              { REPORT_SUBMITTED: ['doctor'] },
   UNDER_MEDICAL_REVIEW:     { REPORT_SUBMITTED: ['international', 'system'] },
-  REPORT_SUBMITTED:         { COMPLETED: ['coordinator'] },
-  COMPLETED:                { FOLLOW_UP: ['coordinator', 'doctor', 'system'] }
+  REPORT_SUBMITTED:         { COMPLETED: ['coordinator', 'nurse'] },
+  COMPLETED:                { FOLLOW_UP: ['coordinator', 'nurse', 'doctor', 'system'] }
 };
 
 export const TERMINAL = ['COMPLETED', 'CANCELLED', 'FOLLOW_UP'];
 export const ALL_STATUSES = Object.keys(LABELS);
 
-// BR-020: cancellation by coordinator/admin only, from any non-terminal status.
+// BR-020: cancellation by nurse/coordinator/admin or patient self-service (WP4), from any non-terminal status.
 export function assertTransition(from, to, actorRole) {
   if (!ALL_STATUSES.includes(to)) return false;
   if (to === 'CANCELLED') {
     if (TERMINAL.includes(from)) return false;
-    return ['coordinator', 'admin'].includes(actorRole);
+    return ['nurse', 'coordinator', 'admin', 'patient'].includes(actorRole);
   }
   return (TRANSITIONS[from]?.[to] || []).includes(actorRole);
 }

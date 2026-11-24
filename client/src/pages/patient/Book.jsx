@@ -33,6 +33,7 @@ export default function Book() {
   const [reason, setReason] = useState('');
   const [history, setHistory] = useState({ symptoms: '', medications: '', allergies: '', diagnosis: '' });
   const [consent, setConsent] = useState(false);
+  const [emergencyFlagged, setEmergencyFlagged] = useState(false);
   const [files, setFiles] = useState([]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -64,6 +65,7 @@ export default function Book() {
 
   const submit = async () => {
     setErr('');
+    if (emergencyFlagged) return setErr(lang === 'ar' ? 'لا يمكن إتمام الحجز للحالات الطارئة. يرجى الاتصال بـ 997 فوراً.' : 'Online booking suspended for acute emergencies. Call 997 immediately.');
     if (!reason.trim()) return setErr(t('reason') + ' — ' + t('submit'));
     if (type === 'GMO' && !purpose) return setErr(t('purpose'));
     if (type === 'GMO' && !consent) return setErr(t('consent'));
@@ -219,8 +221,64 @@ export default function Book() {
           </label>
         )}
 
+        {/* WP4: Emergency 997 Safety Gate */}
+        <div style={{ background: emergencyFlagged ? '#fef2f2' : '#f8fafc', border: `2px solid ${emergencyFlagged ? '#ef4444' : '#e2e8f0'}`, borderRadius: '8px', padding: '14px', marginTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <span style={{ fontSize: '1.6rem' }}>🚨</span>
+            <div style={{ flex: 1 }}>
+              <strong style={{ color: '#991b1b', display: 'block', fontSize: '0.98rem' }}>
+                {lang === 'ar' ? 'تنبيه السلامة الطبي — خدمات غير طارئة' : 'Clinical Safety Notice — Non-Emergent Services Only'}
+              </strong>
+              <p style={{ margin: '4px 0 8px', fontSize: '0.88rem', color: '#475569' }}>
+                {lang === 'ar'
+                  ? 'منصة ألو دكتور مخصصة للاستشارات المجدولة والآراء الطبية الثانية. إذا كنت أنت أو المريض تعاني من ألم حاد في الصدر، ضيق تنفس حاد، أعراض سكتة، أو نزيف شديد:'
+                  : 'AloDoc provides scheduled outpatient consultations and expert written opinions. If you or the patient are experiencing acute chest pain, severe shortness of breath, sudden stroke symptoms, or heavy bleeding:'}
+              </p>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <a
+                  href="tel:997"
+                  style={{
+                    background: '#dc2626',
+                    color: '#fff',
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  📞 {lang === 'ar' ? 'اتصل بـ 997 (الهلال الأحمر)' : 'Call 997 Immediately'}
+                </a>
+              </div>
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: '0.88rem', fontWeight: 600, color: '#991b1b', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={emergencyFlagged}
+              onChange={e => setEmergencyFlagged(e.target.checked)}
+            />
+            <span>
+              {lang === 'ar'
+                ? 'أعاني حالياً من حالة طبية طارئة حادة / ألم شديد'
+                : 'I am experiencing an acute medical emergency / severe symptoms'}
+            </span>
+          </label>
+        </div>
+
+        {emergencyFlagged && (
+          <div style={{ background: '#7f1d1d', color: '#fff', padding: '14px', borderRadius: '8px', marginTop: 12, textAlign: 'center' }}>
+            <h3 style={{ margin: '0 0 6px', color: '#fef08a' }}>🛑 {lang === 'ar' ? 'تم إيقاف الحجز للحالات الطارئة' : 'BOOKING HALTED: Call 997 Immediately'}</h3>
+            <p style={{ margin: 0, fontSize: '0.9rem' }}>
+              {lang === 'ar'
+                ? 'سلامتك هي أولويتنا. يرجى الاتصال بالإسعاف (997) أو التوجه فوراً لأقرب قسم طوارئ.'
+                : 'For your safety, booking is suspended. Please contact the Saudi Red Crescent (997) or go to the nearest emergency department right now.'}
+            </p>
+          </div>
+        )}
+
         <div className="row" style={{ marginTop: 12 }}>
-          <button onClick={submit} disabled={busy}>{busy ? t('loading') : t('reviewAndSubmit')}</button>
+          <button onClick={submit} disabled={busy || emergencyFlagged}>{busy ? t('loading') : t('reviewAndSubmit')}</button>
           <Link className="btn" to="/">{t('cancel')}</Link>
         </div>
       </section>
