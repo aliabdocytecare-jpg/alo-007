@@ -5,6 +5,7 @@ import { db, MOCK_AUTH } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
 import { issueSession, COOKIE, PATIENT_TTL, STAFF_TTL } from '../middleware/auth.js';
 import { notifyAdmins } from '../services/notificationService.js';
+import { sendStaffPasswordResetEmail } from '../services/mailService.js';
 import { getWhatsAppConfig, whatsappMode, sendOtpTemplate, otpLangFor } from '../services/whatsappService.js';
 
 const PW_RE = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{10,}$/;
@@ -239,6 +240,102 @@ export const completeActivation = ah(async (req, res) => {
       hospital_id: s.hospital_id || null
     }
   });
+});
+
+// DEC-068: Request staff password reset email
+export const forgotPassword = ah(async (req, res) => {
+  const { email } = req.body;
+  if (!email?.trim()) throw httpError(400, 'Email address is required.', 'MISSING_EMAIL');
+  const cleanEmail = email.trim().toLowerCase();
+
+  const { data: staff } = await db.from('staff_users')
+    .select('id, email, full_name, role, is_active, email_verified')
+    .eq('email', cleanEmail)
+    .maybeSingle();
+
+  // If user does not exist, or is inactive, or not email verified
+  if (!staff || !staff.is_active || !staff.email_verified) {
+    throw httpError(404, 'This email is not registered to an account. Contact the administrator.', 'ACCOUNT_NOT_FOUND');
+  }
+
+  // Generate 32-byte cryptographic token (1-hour expiration)
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+
+  const { error } = await db.from('staff_users').update({
+    reset_token_hash: tokenHash,
+    reset_expires_at: expiresAt
+  }).eq('id', staff.id);
+
+  if (error) throw httpError(500, error.message);
+
+  try {
+    await sendStaffPasswordResetEmail({
+      to: staff.email,
+      fullName: staff.full_name,
+      token: rawToken
+    });
+  } catch (mailErr) {
+    console.error('[MailService] Failed to send password reset email:', mailErr.message);
+    throw httpError(500, `Failed to send password reset email: ${mailErr.message}`);
+  }
+
+  await audit(req, 'STAFF_FORGOT_PW_REQUESTED', { resourceType: 'staff', resourceId: staff.id, detail: { email: staff.email } });
+  res.json({ ok: true, message: 'Password reset link sent to your email.' });
+});
+
+// DEC-068: Validate password reset token
+export const validateResetToken = ah(async (req, res) => {
+  const { token } = req.query;
+  if (!token) throw httpError(400, 'Reset token is required.', 'MISSING_TOKEN');
+  const tokenHash = crypto.createHash('sha256').update(String(token).trim()).digest('hex');
+
+  const { data: staff } = await db.from('staff_users')
+    .select('id, email, full_name, reset_expires_at, is_active, email_verified')
+    .eq('reset_token_hash', tokenHash)
+    .maybeSingle();
+
+  if (!staff || !staff.is_active) throw httpError(404, 'Invalid or expired password reset link.', 'INVALID_TOKEN');
+  if (new Date(staff.reset_expires_at).getTime() < Date.now()) {
+    throw httpError(410, 'This password reset link has expired. Please request a new one.', 'TOKEN_EXPIRED');
+  }
+
+  res.json({ ok: true, staff: { email: staff.email, full_name: staff.full_name } });
+});
+
+// DEC-068: Complete password reset with new confidential password
+export const completeResetPassword = ah(async (req, res) => {
+  const { token, password, confirm_password } = req.body;
+  if (!token) throw httpError(400, 'Reset token is required.', 'MISSING_TOKEN');
+  if (!password || !confirm_password) throw httpError(400, 'Password and confirmation are required.', 'PASSWORD_REQUIRED');
+  if (password !== confirm_password) throw httpError(400, 'Passwords do not match.', 'PASSWORD_MISMATCH');
+  if (!PW_RE.test(password)) {
+    throw httpError(400, 'Password must be at least 10 characters with 1 uppercase letter, 1 number, and 1 special character.', 'PASSWORD_WEAK');
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(String(token).trim()).digest('hex');
+  const { data: staff } = await db.from('staff_users')
+    .select('id, email, full_name, reset_expires_at')
+    .eq('reset_token_hash', tokenHash)
+    .maybeSingle();
+
+  if (!staff) throw httpError(404, 'Invalid or expired password reset link.', 'INVALID_TOKEN');
+  if (new Date(staff.reset_expires_at).getTime() < Date.now()) {
+    throw httpError(410, 'This password reset link has expired. Please request a new one.', 'TOKEN_EXPIRED');
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const { error } = await db.from('staff_users').update({
+    password_hash: passwordHash,
+    reset_token_hash: null,
+    reset_expires_at: null
+  }).eq('id', staff.id);
+
+  if (error) throw httpError(500, error.message);
+
+  await audit(req, 'STAFF_PASSWORD_RESET', { resourceType: 'staff', resourceId: staff.id, detail: { email: staff.email } });
+  res.json({ ok: true, message: 'Password reset successfully. You can now sign in with your new password.' });
 });
 
 export const me = ah(async (req, res) => {

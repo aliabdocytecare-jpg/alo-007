@@ -15,8 +15,12 @@ function StaffTab() {
 
   const create = async () => {
     setState({ err: '', ok: '' });
-    if (!form.full_name?.trim() || !form.email?.trim()) {
-      setState({ err: 'Full name and email are required.', ok: '' });
+    if (!form.full_name?.trim()) {
+      setState({ err: 'Full name is required.', ok: '' });
+      return;
+    }
+    if (!form.email?.trim()) {
+      setState({ err: 'Email is required. An invitation email will be sent to activate the account.', ok: '' });
       return;
     }
     setBusy(true);
@@ -134,8 +138,8 @@ function StaffTab() {
             {['nurse', 'coordinator', 'doctor', 'admin'].map(r => <option key={r} value={r}>{t(r)}</option>)}
           </select>
         </Field>
-        <Field label={t('email')}><input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} dir="ltr" placeholder="staff@hospital.com" /></Field>
-        <Field label={t('phone')}><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} dir="ltr" placeholder="+9665XXXXXXXX" /></Field>
+        <Field label={`${t('email')} *`}><input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} dir="ltr" placeholder="staff@hospital.com" required /></Field>
+        <Field label={t('phoneOptional')}><input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} dir="ltr" placeholder="+9665XXXXXXXX" /></Field>
         {form.role === 'doctor' ? (
           <Field label={t('specialty')}>
             <select

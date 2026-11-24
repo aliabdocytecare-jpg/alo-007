@@ -178,3 +178,118 @@ Administrators never have access to your password.
 
   return info;
 }
+
+// DEC-068: Send password reset email for staff
+export async function sendStaffPasswordResetEmail({ to, fullName, token }) {
+  const origin = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
+  const resetUrl = `${origin}/reset-password?token=${encodeURIComponent(token)}`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your AloDoc Password</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f7f9fb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f7f9fb; padding: 40px 15px;">
+    <tr>
+      <td align="center">
+        <table width="100%" max-width="580" style="max-width: 580px; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 36px 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+          <!-- Header -->
+          <tr>
+            <td style="padding-bottom: 24px; border-bottom: 2px solid #0f172a;">
+              <span style="font-size: 22px; font-weight: 800; letter-spacing: 1px; color: #0f172a;">ALODOC</span>
+              <span style="font-size: 13px; color: #64748b; margin-left: 10px;">Security Services</span>
+            </td>
+          </tr>
+
+          <!-- Body English -->
+          <tr>
+            <td style="padding-top: 24px; padding-bottom: 20px;">
+              <h1 style="margin: 0 0 16px; font-size: 19px; color: #0f172a; font-weight: 700;">Password Reset Request</h1>
+              <p style="margin: 0 0 14px; font-size: 14px; line-height: 1.6; color: #334155;">
+                Hello <strong>${fullName}</strong>,
+              </p>
+              <p style="margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #334155;">
+                We received a request to reset the password for your AloDoc staff account (<strong>${to}</strong>).
+                Click the button below to choose a new password:
+              </p>
+              <div style="margin: 24px 0;">
+                <a href="${resetUrl}" target="_blank" rel="noopener noreferrer" style="background-color: #0f172a; color: #ffffff; display: inline-block; padding: 13px 28px; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 4px; letter-spacing: 0.2px;">Reset Password</a>
+              </div>
+              <p style="margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: #64748b;">
+                <strong>Security Notice:</strong> This reset link is valid for <strong>1 hour</strong> and can only be used once. If you did not request a password reset, please ignore this email; your account remains secure.
+              </p>
+              <p style="margin: 0 0 20px; font-size: 12px; line-height: 1.5; color: #64748b;">
+                Direct Link: <a href="${resetUrl}" style="color: #0f172a; word-break: break-all;">${resetUrl}</a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Arabic Section (RTL) -->
+          <tr>
+            <td dir="rtl" style="padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: right; font-family: 'Segoe UI', Tahoma, Arial, sans-serif;">
+              <h2 style="margin: 0 0 12px; font-size: 17px; color: #0f172a; font-weight: 700;">طلب إعادة تعيين كلمة المرور</h2>
+              <p style="margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: #334155;">
+                مرحبًا <strong>${fullName}</strong>،
+              </p>
+              <p style="margin: 0 0 16px; font-size: 13px; line-height: 1.6; color: #334155;">
+                تلقينا طلبًا لإعادة تعيين كلمة المرور الخاصة بحسابك في منصة ألودوك الطبية. يمكنك استخدام الرابط أعلاه لتعيين كلمة مرور جديدة.
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #64748b;">
+                هذا الرابط صالح لمدة <strong>ساعة واحدة فقط</strong>. إذا لم تكن قد طلبت ذلك، يمكنك تجاهل هذه الرسالة.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding-top: 24px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; text-align: center;">
+              AloDoc Healthcare Platform · Confidential Medical System · <a href="https://alodoc.online" style="color: #64748b;">alodoc.online</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = `AloDoc Healthcare Platform - Password Reset
+
+Hello ${fullName},
+
+We received a request to reset the password for your AloDoc staff account (${to}).
+To set a new password, open the link below:
+
+${resetUrl}
+
+This link is valid for 1 hour and can only be used once.
+If you did not make this request, you can safely ignore this email.
+
+---
+طلب إعادة تعيين كلمة المرور - منصة AloDoc
+مرحبًا ${fullName}، الرابط أعلاه صالح لمدة ساعة واحدة فقط.
+`;
+
+  const mailer = getMailTransporter();
+  const info = await mailer.sendMail({
+    from: defaultFrom,
+    to,
+    subject: `AloDoc Staff: Password Reset Request (${fullName})`,
+    text,
+    html
+  });
+
+  await db.from('notification_log').insert({
+    event_type: 'STAFF_PASSWORD_RESET_REQUESTED',
+    recipient_type: 'staff',
+    channel: 'email',
+    template_id: 'STAFF_PASSWORD_RESET',
+    delivery_status: 'sent',
+    detail: { to, fullName, messageId: info.messageId }
+  }).catch(() => {});
+
+  return info;
+}

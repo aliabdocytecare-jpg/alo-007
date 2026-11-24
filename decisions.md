@@ -558,6 +558,31 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Verification:** Applied migration to Supabase DB, passed `preflight.mjs` (13/13 passing checks), compiled frontend via `npm run build` with zero errors (120 modules in 3.44s), verified SMTP SSL handshake to `mail.salemcctv.com:465`.
 - **Reference:** DEC-004, DEC-045, DEC-066, `server/services/mailService.js`, `client/src/pages/auth/ActivateAccount.jsx`, `server/scripts/test-email.mjs`.
 
+## DEC-068 — Mandatory Email Validation, Optional Phone Labeling & Staff Forgot Password Flow
+- **Decision:** Aligned form validation and field labeling to make Email strictly mandatory and Phone explicitly optional, and implemented self-service password reset for verified staff accounts via SMTP email:
+  1. Mandatory Email vs. Optional Phone Labeling:
+     - Updated `client/src/lib/i18n.jsx` to define `email: 'Email'` (Arabic: `البريد الإلكتروني`) and `emailOptional: 'Email (optional)'` (used only for optional patient registration).
+     - In `client/src/pages/admin/Admin.jsx` (`StaffTab`), updated email field label to `Email *` and phone field to `Phone number (optional)`.
+     - Strengthened client-side and server-side validation to reject empty staff emails with clear error messaging.
+     - In `client/src/pages/Login.jsx`, staff sign-in field cleanly displays `Email` rather than `Email (optional)`.
+  2. Staff Forgot Password Flow:
+     - Added `Forgot Password?` toggle on the Staff Sign-In form (`client/src/pages/Login.jsx`).
+     - Staff enters their registered email and clicks `Send Reset Link`.
+     - Handled by backend endpoint `POST /api/v1/auth/forgot-password`:
+       - If email is not registered, inactive, or unverified (`email_verified !== true`), throws 404: "This email is not registered to an account. Contact the administrator."
+       - If valid, generates a single-use 32-byte cryptographic token (SHA-256 hash stored in DB, expires in 1 hour) and dispatches a responsive bilingual password reset email via `mailService.js`.
+  3. Reset Password Page (`/reset-password?token=...`):
+     - Created `client/src/pages/auth/ResetPassword.jsx` mounted in `client/src/App.jsx`.
+     - Validates token on mount via `GET /api/v1/auth/reset-validate?token=...`.
+     - Requires double entry (New Password & Confirm Password) using `PasswordInput` with SVG eye visibility toggle.
+     - Enforces password complexity rules (10+ characters, 1 uppercase, 1 digit, 1 special character, and matching confirmation).
+     - Submits to `POST /api/v1/auth/reset-complete`, updates `password_hash` with bcrypt, invalidates token, and audits `STAFF_PASSWORD_RESET`.
+  4. Database Migration:
+     - `supabase/migrations/20261124000002_staff_password_reset.sql` added `reset_token_hash TEXT` and `reset_expires_at TIMESTAMPTZ` with index to `staff_users`. Applied directly to live Supabase DB.
+- **Verification:** Applied migration to Supabase, ran `preflight.mjs` (13/13 passing checks), compiled frontend via `vite build` with zero errors in 4.33s.
+- **Reference:** DEC-004, DEC-066, DEC-067, `client/src/pages/auth/ResetPassword.jsx`, `supabase/migrations/20261124000002_staff_password_reset.sql`.
+
+
 
 
 

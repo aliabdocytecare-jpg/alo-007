@@ -18,6 +18,9 @@ export default function Login() {
   const [mock, setMock] = useState(false);
   const [reg, setReg] = useState({ full_name: '', dob: '', gender: '', nationality: '', email: '' });
   const [staff, setStaff] = useState({ email: '', password: '' });
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState('');
   const [hospPhone, setHospPhone] = useState('');
   const [hospOtp, setHospOtp] = useState('');
   const [hospOtpSent, setHospOtpSent] = useState(false);
@@ -65,6 +68,22 @@ export default function Login() {
     setBusy(false);
   };
 
+  const sendResetLink = async () => {
+    if (!forgotEmail?.trim()) {
+      setErr('Please enter your email address.');
+      return;
+    }
+    setBusy(true); setErr(''); setForgotSuccess('');
+    try {
+      const res = await api.post('/auth/forgot-password', { email: forgotEmail });
+      setForgotSuccess(res.data?.message || t('resetLinkSent') || 'Password reset link sent to your email.');
+    } catch (e) {
+      setErr(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const sendHospOtp = async () => {
     setBusy(true); setErr('');
     try {
@@ -91,8 +110,8 @@ export default function Login() {
         <button onClick={toggle}>{t('language')}</button>
       </div>
       <div className="tabs">
-        <button className={tab === 'patient' ? 'active' : ''} onClick={() => { setTab('patient'); setErr(''); }}>{t('patientLogin')}</button>
-        <button className={tab === 'staff' ? 'active' : ''} onClick={() => { setTab('staff'); setErr(''); }}>{t('staffLogin')}</button>
+        <button className={tab === 'patient' ? 'active' : ''} onClick={() => { setTab('patient'); setErr(''); setForgotMode(false); }}>{t('patientLogin')}</button>
+        <button className={tab === 'staff' ? 'active' : ''} onClick={() => { setTab('staff'); setErr(''); setForgotMode(false); }}>{t('staffLogin')}</button>
         <button className={tab === 'hospital' ? 'active' : ''} onClick={() => { setTab('hospital'); setErr(''); }}>Hospital Clinic (OTP)</button>
       </div>
       <Msg err={err} />
@@ -154,7 +173,7 @@ export default function Login() {
                   </div>
                   <div className="grid2">
                     <Field label={t('nationality')}><input value={reg.nationality} onChange={e => setReg({ ...reg, nationality: e.target.value })} /></Field>
-                    <Field label={t('email')}><input type="email" value={reg.email} onChange={e => setReg({ ...reg, email: e.target.value })} /></Field>
+                    <Field label={t('emailOptional')}><input type="email" value={reg.email} onChange={e => setReg({ ...reg, email: e.target.value })} /></Field>
                   </div>
                 </>
               )}
@@ -166,9 +185,16 @@ export default function Login() {
           )}
         </section>
       )}
-      {tab === 'staff' && (
+      {tab === 'staff' && !forgotMode && (
         <section className="box">
-          <Field label={t('email')}><input value={staff.email} onChange={e => setStaff({ ...staff, email: e.target.value })} dir="ltr" /></Field>
+          <Field label={t('email')}>
+            <input
+              value={staff.email}
+              onChange={e => setStaff({ ...staff, email: e.target.value })}
+              dir="ltr"
+              placeholder="staff@hospital.com"
+            />
+          </Field>
           <Field label={t('password')}>
             <PasswordInput
               value={staff.password}
@@ -176,7 +202,57 @@ export default function Login() {
               dir="ltr"
             />
           </Field>
-          <div className="row" style={{ marginTop: 10 }}><button onClick={staffLogin} disabled={busy}>{t('login')}</button></div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+            <button
+              type="button"
+              onClick={() => { setForgotMode(true); setErr(''); setForgotSuccess(''); setForgotEmail(staff.email || ''); }}
+              style={{ background: 'none', border: 'none', color: '#0284c7', padding: '4px 0', fontSize: '0.88rem', textDecoration: 'underline', cursor: 'pointer' }}
+            >
+              {t('forgotPassword')}
+            </button>
+          </div>
+          <div className="row" style={{ marginTop: 12 }}>
+            <button onClick={staffLogin} disabled={busy}>{t('login')}</button>
+          </div>
+        </section>
+      )}
+      {tab === 'staff' && forgotMode && (
+        <section className="box">
+          <h2>{t('forgotPassword')}</h2>
+          <p className="muted" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
+            Enter your registered staff email address. We will send you a secure link to reset your password.
+          </p>
+          {forgotSuccess ? (
+            <div>
+              <div style={{ background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', borderRadius: 6, padding: '0.85rem', marginBottom: '1.25rem', fontSize: '0.92rem' }}>
+                ✓ {forgotSuccess}
+              </div>
+              <button type="button" onClick={() => { setForgotMode(false); setForgotSuccess(''); setErr(''); }}>
+                ← {t('backToSignIn')}
+              </button>
+            </div>
+          ) : (
+            <>
+              <Field label={t('email')}>
+                <input
+                  value={forgotEmail}
+                  onChange={e => setForgotEmail(e.target.value)}
+                  dir="ltr"
+                  placeholder="staff@hospital.com"
+                  disabled={busy}
+                  autoFocus
+                />
+              </Field>
+              <div className="row" style={{ marginTop: 14, gap: 10 }}>
+                <button onClick={sendResetLink} disabled={busy || !forgotEmail.trim()}>
+                  {busy ? t('loading') : t('sendResetLink')}
+                </button>
+                <button type="button" className="btn" onClick={() => { setForgotMode(false); setErr(''); }}>
+                  {t('backToSignIn')}
+                </button>
+              </div>
+            </>
+          )}
         </section>
       )}
     </div>
