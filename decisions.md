@@ -684,6 +684,22 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Verification:** Verified with `vite build` (122 modules transformed in 3.04s) and server `preflight` (13/13 passing checks).
 - **Reference:** DEC-073, `alo_tripartite_video_and_nurse_unification_plan.md`, `client/src/pages/Review.jsx`, `server/controllers/reviewController.js`, `client/src/pages/staff/CaseOps.jsx`, `client/src/pages/patient/CaseView.jsx`.
 
+## DEC-075 — ALO Nurse Clinic-Wide Case Discovery & Thennarasi Account Deprecation
+- **Decision:** Consolidated all nursing operations under a single active ALO Nurse (`Salemcctv` - `salemcctv007@gmail.com`) and unlocked full clinic-wide triage discovery:
+  1. **Staff De-duplication (`staff_users`):**
+     - Permanently removed `Thennarasi` (`then210190thiyagu@gmail.com`) from `staff_users`, leaving `Salemcctv` as the sole ALO Nurse.
+     - Auto-assigned pending patient cases (`ALO-2026-00004` and `ALO-2026-00005`) to `Salemcctv` in `case_assignments`.
+  2. **Automatic Intake Assignment (`server/services/caseService.js`):**
+     - In `createCase`, automatically assigns incoming cases to the active ALO Nurse in `case_assignments` upon creation.
+  3. **Case Discovery Query Unlocking (`server/services/caseService.js`):**
+     - Decoupled `nurse` from `doctor` in `listCasesForRole`: only doctors are filtered by specific case assignment; ALO Nurses now see all cases clinic-wide.
+  4. **Access Control Authorization (`server/middleware/auth.js`):**
+     - Updated `requireCaseAccess` to grant `nurse` unrestricted access to open any clinic case for triage and management.
+  5. **Staff Dashboard Action Queue (`client/src/pages/staff/Dashboard.jsx`):**
+     - Upgraded Staff Dashboard for ALO Nurses with action-oriented tabs (`⚡ Needs ALO Nurse Action`, `👨‍⚕️ With Doctor`, `⏳ Waiting on Patient`, `📁 All Cases`).
+- **Verification:** Verified with `vite build` (122 modules transformed in 2.90s) and server `preflight` (13/13 passing checks, 4 staff accounts verified). Tested case visibility query with Salemcctv session (`ALO-2026-00005` and `ALO-2026-00004` returned at top of list).
+- **Reference:** DEC-074, `nurse_case_visibility_and_thennarasi_removal_plan.md`, `server/services/caseService.js`, `server/middleware/auth.js`, `client/src/pages/staff/Dashboard.jsx`.
+
 
 
 

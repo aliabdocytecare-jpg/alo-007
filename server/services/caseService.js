@@ -69,6 +69,13 @@ export async function createCase({ patient, service_type, service_subtype, speci
     case_id: c.id, from_status: null, to_status: 'SUBMITTED', actor_id: patient.id, actor_role: 'patient',
     message_en: 'Your case was received.', message_ar: 'تم استلام حالتك.'
   });
+
+  // Auto-route case to ALO Nurse
+  const { data: primaryNurse } = await db.from('staff_users').select('id').eq('role', 'nurse').eq('is_active', true).limit(1).maybeSingle();
+  if (primaryNurse) {
+    await db.from('case_assignments').insert({ case_id: c.id, staff_id: primaryNurse.id, role: 'nurse' });
+  }
+
   await transition(c.id, 'INITIAL_REVIEW', { actorRole: 'system' });
   await audit(req, 'CASE_CREATED', { resourceType: 'case', resourceId: c.id, detail: { service_type, case_number: c.case_number } });
 
@@ -134,13 +141,14 @@ export async function listCasesForRole(session) {
       workflow: computeCaseWorkflow(c, 'en')
     }));
   }
-  if (session.role === 'nurse' || session.role === 'doctor') {
+  if (session.role === 'doctor') {
     const { data: assigns } = await db.from('case_assignments').select().eq('staff_id', session.sub);
     const ids = (assigns || []).map(a => a.case_id);
     if (!ids.length) return [];
     const { data } = await db.from('cases').select().in('id', ids).order('updated_at', { ascending: false });
     return attachListExtras(data || []);
   }
+  // ALO Nurse, Coordinator, and Admin see ALL clinic cases
   const { data } = await db.from('cases').select().order('updated_at', { ascending: false }).limit(500);
   return attachListExtras(data || []);
 }

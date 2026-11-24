@@ -87,20 +87,17 @@ export default function StaffDashboard() {
   const by = fn => rows.filter(fn);
   const overdue = by(isOverdue);
 
-  const needsAction = by(c => c.workflow?.custodian === 'COORDINATOR' && !['COMPLETED', 'CANCELLED'].includes(c.status));
-  const withNurse = by(c => c.workflow?.custodian === 'NURSE');
-  const withDoctor = by(c => c.workflow?.custodian === 'DOCTOR');
+  const needsAction = by(c => (c.workflow?.custodian === 'COORDINATOR' || c.workflow?.custodian === 'NURSE' || ['SUBMITTED', 'INITIAL_REVIEW', 'READY_FOR_ASSIGNMENT', 'REPORT_SUBMITTED'].includes(c.status)) && !['COMPLETED', 'CANCELLED'].includes(c.status));
+  const withDoctor = by(c => (c.workflow?.custodian === 'DOCTOR' || ['SPECIALIST_ASSIGNED', 'IN_PROGRESS', 'UNDER_MEDICAL_REVIEW'].includes(c.status)) && c.status !== 'REPORT_SUBMITTED');
   const withPatient = by(c => c.workflow?.custodian === 'PATIENT' && c.status === 'ADDITIONAL_INFO_REQUIRED');
 
   const activeCoordRows = coordTab === 'action'
     ? needsAction
-    : coordTab === 'nurse'
-      ? withNurse
-      : coordTab === 'doctor'
-        ? withDoctor
-        : coordTab === 'patient'
-          ? withPatient
-          : rows;
+    : coordTab === 'doctor'
+      ? withDoctor
+      : coordTab === 'patient'
+        ? withPatient
+        : rows;
 
   return (
     <div>
@@ -111,15 +108,12 @@ export default function StaffDashboard() {
       <Msg err={err} />
       {loading && <p>{t('loading')}</p>}
 
-      {role === 'coordinator' && data && (
+      {['nurse', 'coordinator'].includes(role) && data && (
         <>
-          {/* DEC-070: Coordinator Action-Oriented Tabs */}
+          {/* Action-Oriented Triage Command Tabs for ALO Nurse */}
           <div className="tabs" style={{ marginBottom: '1rem' }}>
             <button className={coordTab === 'action' ? 'active' : ''} onClick={() => setCoordTab('action')}>
               ⚡ {t('needsMyAction')} [{needsAction.length}]
-            </button>
-            <button className={coordTab === 'nurse' ? 'active' : ''} onClick={() => setCoordTab('nurse')}>
-              🩺 {t('withNurse')} [{withNurse.length}]
             </button>
             <button className={coordTab === 'doctor' ? 'active' : ''} onClick={() => setCoordTab('doctor')}>
               👨‍⚕️ {t('withDoctor')} [{withDoctor.length}]
@@ -136,7 +130,7 @@ export default function StaffDashboard() {
             <CaseTable rows={activeCoordRows} />
           </section>
 
-          <h3 style={{ marginTop: '2rem', marginBottom: '0.75rem', color: '#475569' }}>Workflow Queues</h3>
+          <h3 style={{ marginTop: '2rem', marginBottom: '0.75rem', color: '#475569' }}>ALO Nurse Workflow Queues</h3>
           <Section title={t('newCases')} rows={by(c => ['SUBMITTED', 'INITIAL_REVIEW'].includes(c.status))} />
           <Section title={t('incomplete')} rows={by(c => c.status === 'ADDITIONAL_INFO_REQUIRED')} />
           <Section title={t('unassigned')} rows={by(c => c.status === 'READY_FOR_ASSIGNMENT')} />
@@ -146,14 +140,6 @@ export default function StaffDashboard() {
           <Section title={t('followUps')} rows={by(c => c.status === 'FOLLOW_UP')} />
           <Section title={t('intlReviews')} rows={by(c => c.service_type === 'GMO' && ['SPECIALIST_ASSIGNED', 'UNDER_MEDICAL_REVIEW'].includes(c.status))} />
           <Section title={`${t('overdue')} [SLA]`} rows={overdue} open={overdue.length > 0} />
-        </>
-      )}
-
-      {role === 'nurse' && data && (
-        <>
-          <Section title={t('overdue')} rows={overdue} open={overdue.length > 0} />
-          <Section title={t('dueToday')} rows={by(c => c.sla_due_at && isToday(c.sla_due_at))} />
-          <Section title={t('assignedCases')} rows={rows} />
         </>
       )}
 

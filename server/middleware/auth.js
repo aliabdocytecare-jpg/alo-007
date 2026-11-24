@@ -89,7 +89,7 @@ export async function requireCaseAccess(req, res, next) {
     const s = req.session, c = req.case;
     let ok = false;
     if (s.role === 'patient') ok = c.patient_id === s.sub;
-    else if (s.role === 'coordinator' || s.role === 'admin') ok = true;
+    else if (['nurse', 'coordinator', 'admin'].includes(s.role)) ok = true;
     else {
       const { data } = await db.from('case_assignments').select()
         .eq('case_id', c.id).eq('staff_id', s.sub).limit(1);
