@@ -114,7 +114,7 @@ function CoordinatorPanel({ c, reload }) {
         </div>
       )}
 
-      {c.consultation && (
+      {c.service_type === 'CONSULTATION' && c.consultation && (
         <div className="row" style={{ marginTop: 8 }}>
           <input style={{ maxWidth: 360 }} placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meet} onChange={e => setMeet(e.target.value)} dir="ltr" />
           <button onClick={() => run(() => api.patch(`/cases/${c.id}/meet-link`, { meet_url: meet }))}>{t('meetLink')}</button>
@@ -211,7 +211,12 @@ function CoordinatorPanel({ c, reload }) {
           <h3>{t('reportPreview')}</h3>
           <pre className="report">{reportText}</pre>
           <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-            <button onClick={() => { if (window.confirm(t('confirmSubmit'))) run(() => api.post(`/cases/${c.id}/release`)); }}>{t('release')}</button>
+            <button
+              style={{ background: '#16a34a', borderColor: '#16a34a', color: '#fff', fontWeight: 700, padding: '8px 18px', fontSize: '0.95rem' }}
+              onClick={() => { if (window.confirm(t('confirmSubmit'))) run(() => api.post(`/cases/${c.id}/release`)); }}
+            >
+              ✓ {t('release')}
+            </button>
             <a
               className="btn"
               href={`/api/v1/cases/${c.id}/report/pdf`}
