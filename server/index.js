@@ -190,6 +190,7 @@ api.delete('/admin/staff/:id', requireRole('admin'), admin.deleteStaff);
 api.get('/admin/formulary', requireRole('admin'), admin.listFormularyAdmin);
 api.post('/admin/formulary', requireRole('admin'), admin.createDrug);
 api.patch('/admin/formulary/:id', requireRole('admin'), admin.updateDrug);
+api.delete('/admin/formulary/:id', requireRole('admin'), admin.deleteDrug);
 api.get('/specialties', admin.listPublicSpecialties);
 api.get('/admin/specialties', requireRole('admin'), admin.listSpecialtiesAdmin);
 api.post('/admin/specialties', requireRole('admin'), admin.createSpecialty);

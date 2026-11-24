@@ -167,14 +167,18 @@ Administrators never have access to your password.
   });
 
   // Log in notification_log
-  await db.from('notification_log').insert({
-    event_type: 'STAFF_INVITATION',
-    recipient_type: 'staff',
-    channel: 'email',
-    template_id: 'STAFF_ACTIVATION',
-    delivery_status: 'sent',
-    detail: { to, fullName, role, messageId: info.messageId }
-  }).catch(() => {});
+  try {
+    await db.from('notification_log').insert({
+      event_type: 'STAFF_INVITATION',
+      recipient_type: 'staff',
+      channel: 'email',
+      template_id: 'STAFF_ACTIVATION',
+      delivery_status: 'sent',
+      detail: { to, fullName, role, messageId: info.messageId }
+    });
+  } catch (logErr) {
+    console.error('[MailService] Failed to log notification_log:', logErr.message);
+  }
 
   return info;
 }
@@ -282,14 +286,18 @@ If you did not make this request, you can safely ignore this email.
     html
   });
 
-  await db.from('notification_log').insert({
-    event_type: 'STAFF_PASSWORD_RESET_REQUESTED',
-    recipient_type: 'staff',
-    channel: 'email',
-    template_id: 'STAFF_PASSWORD_RESET',
-    delivery_status: 'sent',
-    detail: { to, fullName, messageId: info.messageId }
-  }).catch(() => {});
+  try {
+    await db.from('notification_log').insert({
+      event_type: 'STAFF_PASSWORD_RESET_REQUESTED',
+      recipient_type: 'staff',
+      channel: 'email',
+      template_id: 'STAFF_PASSWORD_RESET',
+      delivery_status: 'sent',
+      detail: { to, fullName, messageId: info.messageId }
+    });
+  } catch (logErr) {
+    console.error('[MailService] Failed to log notification_log:', logErr.message);
+  }
 
   return info;
 }

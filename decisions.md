@@ -582,6 +582,18 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Verification:** Applied migration to Supabase, ran `preflight.mjs` (13/13 passing checks), compiled frontend via `vite build` with zero errors in 4.33s.
 - **Reference:** DEC-004, DEC-066, DEC-067, `client/src/pages/auth/ResetPassword.jsx`, `supabase/migrations/20261124000002_staff_password_reset.sql`.
 
+## DEC-069 — Mail Service Notification Log Fix & Drug Formulary Permanent Deletion
+- **Decision:** Fixed Supabase Postgrest insert logging in `mailService.js` and added permanent deletion for drug formulary items in the Admin console:
+  1. Mail Service Notification Log Fix (`server/services/mailService.js`):
+     - Replaced unsupported `.insert(...).catch()` calls on Postgrest query builder with standard `try { await db.from('notification_log').insert(...); } catch (logErr) { ... }` blocks in both `sendStaffActivationEmail` and `sendStaffPasswordResetEmail`.
+     - Resolved the runtime error `TypeError: db.from(...).insert(...).catch is not a function` which previously threw a 500 error after email dispatch.
+  2. Drug Formulary Permanent Deletion (`DELETE /api/v1/admin/formulary/:id`):
+     - Implemented `deleteDrug` endpoint in `server/controllers/adminController.js` and mounted route in `server/index.js`.
+     - Added permanent `Delete` button alongside `Deactivate` / `Activate` in `FormularyTab` (`client/src/pages/admin/Admin.jsx`) with browser confirmation dialog and success/error notifications.
+- **Verification:** Ran `npm run preflight` (13/13 checks passed), compiled client via `npm run build` with zero errors (121 modules in 4.79s).
+- **Reference:** DEC-004, DEC-067, DEC-068, `server/services/mailService.js`, `client/src/pages/admin/Admin.jsx`.
+
+
 
 
 

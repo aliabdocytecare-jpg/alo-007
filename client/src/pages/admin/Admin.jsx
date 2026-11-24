@@ -173,6 +173,18 @@ function FormularyTab() {
     } catch (e) { setState({ err: errMsg(e), ok: '' }); }
   };
   const toggle = async d => { await api.patch(`/admin/formulary/${d.id}`, { is_active: !d.is_active }); reload(); };
+  const deleteDrug = async d => {
+    const drugName = d.generic_name + (d.brand_name ? ` (${d.brand_name})` : '');
+    if (!window.confirm(`Are you sure you want to permanently delete drug "${drugName}" from the formulary? This cannot be undone.`)) return;
+    setState({ err: '', ok: '' });
+    try {
+      const res = await api.delete(`/admin/formulary/${d.id}`);
+      setState({ ok: res.data?.message || 'Drug permanently deleted.', err: '' });
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+    }
+  };
   return (
     <div>
       <Msg err={err || state.err} ok={state.ok} />
@@ -183,7 +195,20 @@ function FormularyTab() {
             <tr key={d.id}>
               <td>{d.generic_name}</td><td>{d.brand_name || '—'}</td><td>{(d.common_dosages || []).join(', ')}</td><td>{d.route || '—'}</td>
               <td>{d.is_active ? t('active') : t('inactive')}</td>
-              <td><button onClick={() => toggle(d)}>{d.is_active ? t('deactivate') : t('activate')}</button></td>
+              <td>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <button onClick={() => toggle(d)} style={{ padding: '4px 8px', fontSize: '0.85rem' }}>
+                    {d.is_active ? t('deactivate') : t('activate')}
+                  </button>
+                  <button
+                    onClick={() => deleteDrug(d)}
+                    style={{ padding: '4px 8px', fontSize: '0.85rem', color: '#dc2626', borderColor: '#fca5a5', backgroundColor: '#fef2f2' }}
+                    title="Permanently delete drug"
+                  >
+                    {t('deleteStaff') || 'Delete'}
+                  </button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>

@@ -184,6 +184,19 @@ export const updateDrug = ah(async (req, res) => {
   res.json({ ok: true });
 });
 
+// DEC-069: Permanently delete a drug from formulary
+export const deleteDrug = ah(async (req, res) => {
+  const { id } = req.params;
+  const { data: drug } = await db.from('drug_formulary').select('id, generic_name, brand_name').eq('id', id).maybeSingle();
+  if (!drug) throw httpError(404, 'Drug not found in formulary.', 'DRUG_NOT_FOUND');
+
+  const { error } = await db.from('drug_formulary').delete().eq('id', id);
+  if (error) throw httpError(500, error.message);
+
+  await audit(req, 'FORMULARY_DELETED', { resourceType: 'drug', resourceId: id, detail: { generic_name: drug.generic_name, brand_name: drug.brand_name } });
+  res.json({ ok: true, message: `Drug "${drug.generic_name}" was permanently deleted.` });
+});
+
 export const listServices = ah(async (req, res) => {
   const { data } = await db.from('services').select().order('name_en');
   res.json(data || []);
