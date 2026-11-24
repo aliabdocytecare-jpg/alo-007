@@ -4,6 +4,7 @@ import { useParams, Link } from 'react-router-dom';
 import { api, fmtDate } from '../../lib/api';
 import { useI18n } from '../../lib/i18n';
 import { Msg, StatusBadge, Timeline, DocumentList, FileUploader, useAsync } from '../../components/ui';
+import CaseStepper from '../../components/CaseStepper';
 
 export default function CaseView() {
   const { id } = useParams();
@@ -30,7 +31,9 @@ export default function CaseView() {
         <button className="no-print" onClick={reload}>{t('refresh')}</button>
       </div>
       <p className="muted">{t('serviceType')}: {typeLabel}{subLabel ? ` / ${subLabel}` : ''} · {t('created')}: {fmtDate(c.created_at)}</p>
-      <p><StatusBadge status={c.status} /></p>
+      
+      {/* DEC-070: Courier-Style Stepper at top of Case View */}
+      <CaseStepper workflow={c.workflow} status={c.status} />
 
       <section className="box">
         {/* DEC-032: SERVICE cases have no medical report — never promise one. */}

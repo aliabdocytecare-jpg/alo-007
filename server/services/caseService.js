@@ -3,6 +3,7 @@ import { db } from '../config/db.js';
 import { httpError, audit } from '../lib/helpers.js';
 import { LABELS, NEXT_STEP, assertTransition, TERMINAL } from './stateMachine.js';
 import { notify, notifyCoordinators } from './notificationService.js';
+import { computeCaseWorkflow } from '../lib/caseWorkflowEngine.js';
 
 async function slaMinutes(status) {
   const { data } = await db.from('sla_config').select().eq('status', status).maybeSingle();
@@ -98,7 +99,8 @@ async function attachListExtras(rows) {
   return rows.map(r => ({
     ...r,
     patients: pMap[r.patient_id] ? { full_name: pMap[r.patient_id].full_name, phone: pMap[r.patient_id].phone } : null,
-    consultations: cMap[r.id] ? { scheduled_at: cMap[r.id].scheduled_at, consultation_type: cMap[r.id].consultation_type, doctor_id: cMap[r.id].doctor_id } : null
+    consultations: cMap[r.id] ? { scheduled_at: cMap[r.id].scheduled_at, consultation_type: cMap[r.id].consultation_type, doctor_id: cMap[r.id].doctor_id } : null,
+    workflow: computeCaseWorkflow(r, 'en')
   }));
 }
 
@@ -127,7 +129,10 @@ export async function listCasesForRole(session) {
   if (session.role === 'patient') {
     const { data } = await db.from('cases').select()
       .eq('patient_id', session.sub).order('updated_at', { ascending: false });
-    return data || [];
+    return (data || []).map(c => ({
+      ...c,
+      workflow: computeCaseWorkflow(c, 'en')
+    }));
   }
   if (session.role === 'nurse' || session.role === 'doctor') {
     const { data: assigns } = await db.from('case_assignments').select().eq('staff_id', session.sub);
@@ -217,7 +222,8 @@ export async function getCaseForRole(c, session, lang = 'en') {
       report, report_released: !!released,
       prescriptions: released ? b.prescriptions : [],
       can_follow_up: ['COMPLETED', 'FOLLOW_UP'].includes(c.status) || c.follow_up_recommended,
-      can_request_service: c.status !== 'CANCELLED'
+      can_request_service: c.status !== 'CANCELLED',
+      workflow: computeCaseWorkflow({ ...c, ...b }, lang)
     };
   }
 
@@ -230,6 +236,7 @@ export async function getCaseForRole(c, session, lang = 'en') {
     escalated: c.escalated, cancel_reason: c.cancel_reason,
     sla_due_at: c.sla_due_at, owner_id: c.owner_id, owner_role: c.owner_role,
     magic_links: b.magic_links,
+    workflow: computeCaseWorkflow({ ...c, ...b }, lang),
     review: session.role === 'nurse' ? null : b.review, // 6.4: nurse has no clinical-report access
     consultation: b.consultation ? {
       ...b.consultation,

@@ -593,6 +593,35 @@ Format: ID · Decision · Rationale · Bible/Blueprint reference · Reversibilit
 - **Verification:** Ran `npm run preflight` (13/13 checks passed), compiled client via `npm run build` with zero errors (121 modules in 4.79s).
 - **Reference:** DEC-004, DEC-067, DEC-068, `server/services/mailService.js`, `client/src/pages/admin/Admin.jsx`.
 
+## DEC-070 — Courier-Style Case Stepper, Ball-in-Court Custodian Engine & Coordinator Action Board
+- **Decision:** Implemented Courier-Style Case Stepper, Role-Based "Ball-in-Court" (Custodian) and Next-Action To-Do Engine, and Action-Oriented Coordinator Dashboard tailored to the Written Medical Opinion flow (Practo & Mena Health standards):
+  1. Backend Workflow Engine (`server/lib/caseWorkflowEngine.js`):
+     - Calculates 5-stage progression (`Case Received` -> `Nurse Triage` -> `Doctor Review` -> `Opinion Prepared` -> `Delivered & Complete`).
+     - Computes active `custodian` (`COORDINATOR` | `NURSE` | `DOCTOR` | `PATIENT`) based on status, assignments, and intake state.
+     - Generates contextual bilingual `next_action` guidance for every stage.
+     - Attached to `listCasesForRole` and `getCaseForRole` in `server/services/caseService.js`.
+  2. Courier Stepper Component (`client/src/components/CaseStepper.jsx`):
+     - Displays 5 connected horizontal stages with visual indicators (solid green checkmarks for completed, brand blue pulsing circle for active stage, and amber alert for requested documents).
+     - Integrated into:
+       - Patient Home (`client/src/pages/patient/Home.jsx`): Prominent Live Active Case Tracking card rendered on login.
+       - Patient Case View (`client/src/pages/patient/CaseView.jsx`): Pinned at the top of case details.
+       - Staff Case Operations (`client/src/pages/staff/CaseOps.jsx`): Pinned at the top of staff workspace.
+  3. Action-Oriented Coordinator Dashboard (`client/src/pages/staff/Dashboard.jsx`):
+     - Replaces manual queue hunting with 4 actionable segmented tabs:
+       - `⚡ Needs My Action` (cases where custodian is Coordinator)
+       - `🩺 With Nurse` (cases in triage)
+       - `👨‍⚕️ With Doctor` (cases in medical review)
+       - `⏳ Waiting on Patient` (cases waiting for additional reports)
+       - `📁 All Cases`
+     - Added `Custodian` badge and `Next Action` To-Do columns in `CaseTable`.
+  4. 1-Click Clinical Handoffs (`client/src/pages/staff/CaseOps.jsx`):
+     - In `NursePanel`: Added prominent `✓ Complete Triage & Forward to Doctor` CTA that saves vitals and notifies the Coordinator.
+     - In `DoctorPanel`: Added Nurse Triage Vitals highlight box at the top, and updated submit CTA to `✓ Finalize Opinion & Submit to Coordinator`.
+     - In `CoordinatorPanel`: Added notification callout when Nurse triage completes, instructing immediate Doctor assignment.
+- **Verification:** Ran `npm run preflight` (13/13 passing checks), compiled frontend via `npm run build` with zero errors (122 modules in 6.83s).
+- **Reference:** DEC-004, DEC-068, DEC-069, `client/src/components/CaseStepper.jsx`, `server/lib/caseWorkflowEngine.js`, `case_workflow_tracking_plan.md`.
+
+
 
 
 

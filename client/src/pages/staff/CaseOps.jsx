@@ -5,6 +5,7 @@ import { api, errMsg, fmtDate } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useI18n } from '../../lib/i18n';
 import { Msg, Field, StatusBadge, Timeline, DocumentList, FileUploader, useAsync } from '../../components/ui';
+import CaseStepper from '../../components/CaseStepper';
 
 const REQUIRED_DOCS = { GMO: ['Medical Report', 'Imaging', 'Lab Result'], CONSULTATION: ['ID Document'], SERVICE: [] };
 
@@ -61,6 +62,13 @@ function CoordinatorPanel({ c, reload }) {
           <p style={{ margin: '4px 0 0' }}>Staff / Specialist assigned. Coordinate appointment schedule, review findings, or publish final report.</p>
         )}
       </div>
+
+      {c.intake_completed && !c.assignments?.some(a => a.role === 'doctor') && (
+        <div style={{ background: '#f3e8ff', border: '1px solid #d8b4fe', padding: '10px 14px', borderRadius: '6px', marginBottom: 14, color: '#6b21a8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>🔔</span>
+          <div>Nurse triage & vitals intake completed! Please assign a Doctor / Specialist below to proceed with medical review.</div>
+        </div>
+      )}
 
       {!c.payment_confirmed && ['SUBMITTED', 'INITIAL_REVIEW'].includes(c.status) && (
         <div className="row">
@@ -244,7 +252,11 @@ function NursePanel({ c, reload }) {
     <section className="box">
       <h2>{t('nurse')} — {t('vitals')}</h2>
       <ActionMsg state={state} />
-      {readOnly && <p className="muted">[{t('intakeDone')}]</p>}
+      {readOnly && (
+        <div style={{ background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', padding: '10px 14px', borderRadius: '6px', marginBottom: '14px', fontWeight: 600 }}>
+          ✓ {t('intakeDone')} — Case forwarded to Coordinator for Doctor assignment
+        </div>
+      )}
       <h3>{t('checklist')}</h3>
       <table>
         <tbody>
@@ -264,10 +276,20 @@ function NursePanel({ c, reload }) {
             <Field label={t('height')}><input type="number" value={v.height} onChange={e => setV({ ...v, height: e.target.value })} /></Field>
             <Field label={t('spo2')}><input type="number" value={v.spo2} onChange={e => setV({ ...v, spo2: e.target.value })} /></Field>
           </div>
-          <Field label={t('nursingNotes')}><textarea value={v.nursing_notes} onChange={e => setV({ ...v, nursing_notes: e.target.value })} /></Field>
-          <div className="row" style={{ marginTop: 8 }}>
-            <button onClick={() => run(() => api.post(`/cases/${c.id}/vitals`, v))}>{t('save')}</button>
-            <button onClick={() => run(() => api.post(`/cases/${c.id}/intake-complete`))}>{t('completeIntake')}</button>
+          <Field label={t('nursingNotes')}><textarea value={v.nursing_notes} onChange={e => setV({ ...v, nursing_notes: e.target.value })} placeholder="Enter clinical observations or document review notes..." /></Field>
+          <div className="row" style={{ marginTop: 12, gap: 10 }}>
+            <button onClick={() => run(() => api.post(`/cases/${c.id}/vitals`, v))} className="btn">{t('save')}</button>
+            <button
+              onClick={() => run(async () => {
+                if (v.blood_pressure || v.heart_rate || v.temperature || v.weight || v.height || v.spo2 || v.nursing_notes) {
+                  await api.post(`/cases/${c.id}/vitals`, v);
+                }
+                await api.post(`/cases/${c.id}/intake-complete`);
+              }, 'Triage completed! Case forwarded to Coordinator for Doctor assignment')}
+              style={{ background: '#059669', borderColor: '#059669', color: '#fff', fontWeight: 600, padding: '8px 16px' }}
+            >
+              ✓ {t('completeIntakeAndForward')}
+            </button>
           </div>
         </>
       )}
@@ -335,6 +357,14 @@ function DoctorPanel({ c, reload }) {
       <h2>{t('doctor')} — {t('notes')}</h2>
       <ActionMsg state={state} />
 
+      {c.vitals?.[0] && (
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px 14px', marginBottom: '14px', fontSize: '0.88rem' }}>
+          <strong style={{ color: '#0f172a' }}>🩺 Nurse Triage Vitals:</strong>{' '}
+          BP: {c.vitals[0].blood_pressure || '—'} · HR: {c.vitals[0].heart_rate ?? '—'} bpm · Temp: {c.vitals[0].temperature ?? '—'} °C · SpO2: {c.vitals[0].spo2 ?? '—'}% · Weight: {c.vitals[0].weight ?? '—'} kg
+          {c.vitals[0].nursing_notes && <div style={{ marginTop: '4px', color: '#475569' }}><em>Triage Observations: {c.vitals[0].nursing_notes}</em></div>}
+        </div>
+      )}
+
       {parentCtx && (
         <details open>
           <summary>{t('previousConsultation')} — {parentCtx.case_number}</summary>
@@ -383,10 +413,16 @@ function DoctorPanel({ c, reload }) {
               <Field label={t('fuReason')}><input value={fu.reason} onChange={e => setFu({ ...fu, reason: e.target.value })} /></Field>
             </div>
           )}
-          <button disabled={!report.trim()} onClick={() => {
-            if (!window.confirm(t('confirmSubmit'))) return;
-            run(() => api.post(`/cases/${c.id}/report`, { report, follow_up_recommended: fu.on, follow_up_timeframe: fu.timeframe, follow_up_type: fu.type, follow_up_reason: fu.reason }));
-          }}>{t('submitReport')}</button>
+          <button
+            disabled={!report.trim()}
+            style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontWeight: 600, padding: '8px 16px' }}
+            onClick={() => {
+              if (!window.confirm(t('confirmSubmit'))) return;
+              run(() => api.post(`/cases/${c.id}/report`, { report, follow_up_recommended: fu.on, follow_up_timeframe: fu.timeframe, follow_up_type: fu.type, follow_up_reason: fu.reason }), 'Medical opinion submitted to Coordinator for final release');
+            }}
+          >
+            ✓ {t('finalizeAndSubmit')}
+          </button>
         </div>
       )}
 
@@ -591,6 +627,9 @@ export default function CaseOps() {
       </div>
       <p><StatusBadge status={c.status} /> <span className="muted">{c.service_type}{c.service_subtype ? ` / ${c.service_subtype}` : ''} · {c.specialty || ''} · {t('created')}: {fmtDate(c.created_at)}</span></p>
       {c.escalated && <p><strong>[{t('escalate')}]</strong></p>}
+
+      {/* DEC-070: Live Courier Stepper at top of Case Operations */}
+      <CaseStepper workflow={c.workflow} status={c.status} compact={false} />
 
       <section className="box">
         <h2>{t('patientInfo')}</h2>
