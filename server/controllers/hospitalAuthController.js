@@ -1,5 +1,6 @@
-// DEC-056: Hospital Staff Authentication (WhatsApp OTP only)
+// DEC-056: Hospital Staff Authentication (Password + WhatsApp OTP)
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { db, MOCK_AUTH } from '../config/db.js';
 import { ah, httpError, audit } from '../lib/helpers.js';
 import { toE164, PHONE_E164_RE } from '../lib/phone.js';
@@ -46,6 +47,178 @@ function verifyOtp(phone, otp) {
   e.attempts = 0;
   e.code = null; // single use
 }
+
+/**
+ * POST /api/v1/auth/staff/check-phone
+ * Checks if hospital staff exists and has a password set (without triggering an OTP)
+ */
+export const checkStaffPhone = ah(async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) throw httpError(400, 'Phone number is required');
+
+  const phoneE164 = toE164(phone);
+  const { data: staff, error } = await db
+    .from('staff_users')
+    .select('id, role, full_name, is_active, hospital_id, password_hash')
+    .or(`phone_e164.eq.${phoneE164},phone.eq.${phoneE164}`)
+    .maybeSingle();
+
+  if (error) throw httpError(500, `Database error: ${error.message}`);
+  if (!staff || !staff.is_active) {
+    throw httpError(403, 'This number cannot sign in. Please contact your administrator.', {
+      code: 'staff_not_authorized'
+    });
+  }
+
+  if (staff.hospital_id) {
+    const { data: hosp } = await db.from('hospitals').select('id, is_active').eq('id', staff.hospital_id).maybeSingle();
+    if (!hosp || !hosp.is_active) {
+      throw httpError(403, 'This hospital is currently inactive. Please contact support.', {
+        code: 'hospital_inactive'
+      });
+    }
+  }
+
+  res.json({
+    ok: true,
+    phone: phoneE164,
+    exists: true,
+    hasPassword: Boolean(staff.password_hash),
+    name: staff.full_name
+  });
+});
+
+/**
+ * POST /api/v1/auth/staff/password-login
+ * Direct phone + password sign-in for hospital staff / hospital_admin (no OTP needed)
+ */
+export const staffPasswordLogin = ah(async (req, res) => {
+  const { phone, password } = req.body;
+  if (!phone) throw httpError(400, 'Phone number is required');
+  if (!password) throw httpError(400, 'Password is required');
+
+  const phoneE164 = toE164(phone);
+  const { data: staff } = await db
+    .from('staff_users')
+    .select('id, role, full_name, is_active, hospital_id, password_hash')
+    .or(`phone_e164.eq.${phoneE164},phone.eq.${phoneE164}`)
+    .maybeSingle();
+
+  if (!staff || !staff.is_active) {
+    throw httpError(403, 'This number cannot sign in. Please contact your administrator.');
+  }
+  if (!staff.password_hash) {
+    throw httpError(400, 'No password has been set for this account. Please sign in with OTP to set your password.', 'NO_PASSWORD_SET');
+  }
+
+  if (staff.hospital_id) {
+    const { data: hosp } = await db.from('hospitals').select('id, is_active').eq('id', staff.hospital_id).maybeSingle();
+    if (!hosp || !hosp.is_active) {
+      throw httpError(403, 'This hospital is currently inactive. Please contact support.');
+    }
+  }
+
+  const match = await bcrypt.compare(String(password).trim(), staff.password_hash);
+  if (!match) {
+    throw httpError(401, 'Incorrect password. Please try again or reset via OTP.', 'INVALID_CREDENTIALS');
+  }
+
+  const token = issueSession(res, {
+    sub: staff.id,
+    role: staff.role,
+    kind: 'staff',
+    hospital_id: staff.hospital_id
+  }, STAFF_TTL);
+
+  await audit(req, 'STAFF_LOGIN_PASSWORD', {
+    resourceType: 'staff_user',
+    resourceId: staff.id,
+    actorId: staff.id,
+    actorRole: staff.role,
+    hospitalId: staff.hospital_id
+  });
+
+  res.json({
+    ok: true,
+    hasPassword: Boolean(staff.password_hash),
+    token,
+    user: {
+      id: staff.id,
+      role: staff.role,
+      kind: 'staff',
+      full_name: staff.full_name,
+      hospital_id: staff.hospital_id
+    }
+  });
+});
+
+/**
+ * POST /api/v1/auth/staff/set-password
+ * Sets or resets password for hospital staff / hospital_admin after OTP verification
+ */
+export const setStaffPassword = ah(async (req, res) => {
+  const { password, phone, otp } = req.body;
+  if (!password || String(password).trim().length < 6) {
+    throw httpError(400, 'Password must be at least 6 characters long.', 'WEAK_PASSWORD');
+  }
+
+  let staffId = req.session?.kind === 'staff' ? req.session.sub : null;
+  if (!staffId) {
+    if (!phone || !otp) {
+      throw httpError(401, 'Authentication or phone + OTP is required to set password.', 'UNAUTHORIZED');
+    }
+    const phoneE164 = toE164(phone);
+    verifyOtp(phoneE164, otp);
+    const { data: s } = await db
+      .from('staff_users')
+      .select('id')
+      .or(`phone_e164.eq.${phoneE164},phone.eq.${phoneE164}`)
+      .maybeSingle();
+    if (!s) throw httpError(404, 'Staff account not found.');
+    staffId = s.id;
+  }
+
+  const hash = await bcrypt.hash(String(password).trim(), 10);
+  const { data: updated, error } = await db
+    .from('staff_users')
+    .update({ password_hash: hash })
+    .eq('id', staffId)
+    .select('id, role, full_name, hospital_id')
+    .single();
+
+  if (error) throw httpError(500, error.message);
+
+  let token = null;
+  if (!req.session?.sub) {
+    token = issueSession(res, {
+      sub: updated.id,
+      role: updated.role,
+      kind: 'staff',
+      hospital_id: updated.hospital_id
+    }, STAFF_TTL);
+  }
+
+  await audit(req, 'STAFF_PASSWORD_SET', {
+    resourceType: 'staff_user',
+    resourceId: updated.id,
+    actorId: updated.id,
+    actorRole: updated.role,
+    hospitalId: updated.hospital_id
+  });
+
+  res.json({
+    ok: true,
+    message: 'Password set successfully.',
+    token,
+    user: {
+      id: updated.id,
+      role: updated.role,
+      kind: 'staff',
+      full_name: updated.full_name,
+      hospital_id: updated.hospital_id
+    }
+  });
+});
 
 /**
  * POST /api/v1/auth/staff/otp/send
@@ -139,7 +312,7 @@ export const verifyStaffOtp = ah(async (req, res) => {
 
   const { data: staff } = await db
     .from('staff_users')
-    .select('id, role, full_name, is_active, hospital_id, phone_verified_at')
+    .select('id, role, full_name, is_active, hospital_id, phone_verified_at, password_hash')
     .or(`phone_e164.eq.${phoneE164},phone.eq.${phoneE164}`)
     .maybeSingle();
 
@@ -191,6 +364,7 @@ export const verifyStaffOtp = ah(async (req, res) => {
 
   res.json({
     ok: true,
+    hasPassword: Boolean(staff.password_hash),
     token,
     user: {
       id: staff.id,

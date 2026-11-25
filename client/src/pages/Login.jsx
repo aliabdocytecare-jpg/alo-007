@@ -30,6 +30,12 @@ export default function Login() {
   const [hospPhone, setHospPhone] = useState('');
   const [hospOtp, setHospOtp] = useState('');
   const [hospOtpSent, setHospOtpSent] = useState(false);
+  const [hospMode, setHospMode] = useState('phone'); // 'phone' | 'password' | 'otp' | 'set_password'
+  const [hospResetFlow, setHospResetFlow] = useState(false);
+  const [hospPassword, setHospPassword] = useState('');
+  const [hospNewPassword, setHospNewPassword] = useState('');
+  const [hospConfirmPassword, setHospConfirmPassword] = useState('');
+  const [hospName, setHospName] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -184,11 +190,42 @@ export default function Login() {
     }
   };
 
-  const sendHospOtp = async () => {
+  const handleHospContinue = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!hospPhone.trim()) return;
     setBusy(true); setErr('');
     try {
-      await api.post('/auth/staff/otp/send', { phone: hospPhone });
+      const { data } = await api.post('/auth/staff/check-phone', { phone: hospPhone.trim() });
+      if (data.phone) setHospPhone(data.phone);
+      setHospName(data.name || '');
+      if (data.hasPassword) {
+        setHospMode('password');
+      } else {
+        await sendHospOtp(data.phone || hospPhone.trim());
+      }
+    } catch (e) { setErr(errMsg(e)); }
+    setBusy(false);
+  };
+
+  const sendHospOtp = async (targetPhone) => {
+    setBusy(true); setErr('');
+    try {
+      const p = targetPhone || hospPhone.trim();
+      await api.post('/auth/staff/otp/send', { phone: p });
       setHospOtpSent(true);
+      setHospMode('otp');
+    } catch (e) { setErr(errMsg(e)); }
+    setBusy(false);
+  };
+
+  const loginHospWithPassword = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!hospPassword) return setErr('Please enter your password.');
+    setBusy(true); setErr('');
+    try {
+      await api.post('/auth/staff/password-login', { phone: hospPhone.trim(), password: hospPassword });
+      await refresh();
+      nav('/hospital', { replace: true });
     } catch (e) { setErr(errMsg(e)); }
     setBusy(false);
   };
@@ -196,11 +233,42 @@ export default function Login() {
   const verifyHospOtp = async () => {
     setBusy(true); setErr('');
     try {
-      await api.post('/auth/staff/otp/verify', { phone: hospPhone, otp: hospOtp });
+      const { data } = await api.post('/auth/staff/otp/verify', { phone: hospPhone.trim(), otp: hospOtp });
+      if (!data?.hasPassword || hospResetFlow) {
+        setHospMode('set_password');
+        setBusy(false);
+        return;
+      }
       await refresh();
       nav('/hospital', { replace: true });
     } catch (e) { setErr(errMsg(e)); }
     setBusy(false);
+  };
+
+  const saveHospPasswordAndProceed = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!hospNewPassword || hospNewPassword.length < 6) {
+      return setErr('Password must be at least 6 characters.');
+    }
+    if (hospNewPassword !== hospConfirmPassword) {
+      return setErr('Passwords do not match.');
+    }
+    setBusy(true); setErr('');
+    try {
+      await api.post('/auth/staff/set-password', {
+        password: hospNewPassword,
+        phone: hospPhone.trim(),
+        otp: hospOtp
+      });
+      await refresh();
+      nav('/hospital', { replace: true });
+    } catch (e) { setErr(errMsg(e)); }
+    setBusy(false);
+  };
+
+  const skipHospPasswordAndProceed = async () => {
+    await refresh();
+    nav('/hospital', { replace: true });
   };
 
   return (
@@ -212,35 +280,165 @@ export default function Login() {
       <div className="tabs">
         <button className={tab === 'patient' ? 'active' : ''} onClick={() => { setTab('patient'); setErr(''); setForgotMode(false); setPatientMode('phone'); setIsResetFlow(false); setPatientPassword(''); setNewPassword(''); setConfirmPassword(''); }}>{t('patientLogin')}</button>
         <button className={tab === 'staff' ? 'active' : ''} onClick={() => { setTab('staff'); setErr(''); setForgotMode(false); }}>{t('staffLogin')}</button>
-        <button className={tab === 'hospital' ? 'active' : ''} onClick={() => { setTab('hospital'); setErr(''); }}>Hospital Clinic (OTP)</button>
+        <button className={tab === 'hospital' ? 'active' : ''} onClick={() => { setTab('hospital'); setErr(''); setHospMode('phone'); setHospResetFlow(false); setHospPassword(''); setHospNewPassword(''); setHospConfirmPassword(''); }}>Hospital Clinic</button>
       </div>
       <Msg err={err} />
       {tab === 'hospital' && (
         <section className="box">
-          <h2>Hospital Clinic Staff Sign-In</h2>
-          <p className="muted">Saudi day-clinic doctors, receptionists, lab technicians, and pharmacists authenticate via WhatsApp OTP.</p>
-          <Field label={t('phone')}>
-            <input value={hospPhone} onChange={e => setHospPhone(e.target.value)} placeholder="05XXXXXXXX or +9665XXXXXXXX" dir="ltr" disabled={hospOtpSent} />
-          </Field>
-          {!hospOtpSent && (
-            <div className="row" style={{ marginTop: 12 }}>
-              <button disabled={busy || !hospPhone} onClick={sendHospOtp}>
-                {busy ? t('loading') : 'Send WhatsApp OTP'}
-              </button>
+          <h2>Hospital Clinic & Admin Sign-In</h2>
+          <p className="muted">Hospital admins, receptionists, and clinic staff sign in with password or first-time WhatsApp OTP.</p>
+
+          {/* State 1: Phone Input */}
+          {hospMode === 'phone' && (
+            <form onSubmit={handleHospContinue}>
+              <Field label={t('phone')}>
+                <input
+                  value={hospPhone}
+                  onChange={e => setHospPhone(e.target.value)}
+                  placeholder="05XXXXXXXX or +9665XXXXXXXX"
+                  dir="ltr"
+                  autoFocus
+                />
+              </Field>
+              <div className="row" style={{ marginTop: 12, gap: 10 }}>
+                <button type="submit" disabled={busy || !hospPhone.trim()}>
+                  {busy ? t('loading') : 'Continue →'}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => { setHospResetFlow(false); sendHospOtp(); }}
+                  disabled={busy || !hospPhone.trim()}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  💬 Sign in with OTP
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* State 2: Password Login */}
+          {hospMode === 'password' && (
+            <form onSubmit={loginHospWithPassword}>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <span className="muted" style={{ fontSize: '0.85rem', display: 'block' }}>Signing in as:</span>
+                  <strong>{hospPhone} {hospName ? `(${hospName})` : ''}</strong>
+                </div>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                  onClick={() => { setHospMode('phone'); setHospPassword(''); setErr(''); }}
+                >
+                  Change Phone
+                </button>
+              </div>
+
+              <Field label={t('password')}>
+                <PasswordInput
+                  value={hospPassword}
+                  onChange={e => setHospPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoFocus
+                />
+              </Field>
+
+              <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
+                <button type="submit" disabled={busy || !hospPassword}>
+                  {busy ? t('loading') : (t('login') || 'Sign In')}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => { setHospResetFlow(true); sendHospOtp(); }}
+                  disabled={busy}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  🔑 Forgot password? Reset via OTP
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* State 3: OTP Verification */}
+          {hospMode === 'otp' && (
+            <div>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <strong>Verify WhatsApp OTP</strong>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                  onClick={() => { setHospMode('phone'); setHospOtpSent(false); setHospOtp(''); setErr(''); }}
+                >
+                  Change Phone
+                </button>
+              </div>
+              <p className="muted" style={{ margin: '0 0 10px' }}>
+                Verification code sent to <strong>{hospPhone}</strong> via WhatsApp.
+              </p>
+              <Field label={t('otp')}>
+                <input
+                  value={hospOtp}
+                  onChange={e => setHospOtp(e.target.value)}
+                  placeholder="6-digit code"
+                  dir="ltr"
+                  maxLength={6}
+                  autoFocus
+                />
+              </Field>
+              <div className="row" style={{ marginTop: 12, gap: 10 }}>
+                <button disabled={busy || hospOtp.length < 4} onClick={verifyHospOtp}>
+                  {busy ? t('loading') : 'Verify & Continue'}
+                </button>
+                <button type="button" className="btn" onClick={() => sendHospOtp()}>
+                  Resend OTP
+                </button>
+              </div>
             </div>
           )}
-          {hospOtpSent && (
-            <>
-              <Field label={t('otp')}>
-                <input value={hospOtp} onChange={e => setHospOtp(e.target.value)} placeholder="6-digit code" dir="ltr" />
-              </Field>
-              <div className="row" style={{ marginTop: 12 }}>
-                <button disabled={busy || hospOtp.length < 4} onClick={verifyHospOtp}>
-                  {busy ? t('loading') : 'Verify & Enter Clinic Portal'}
-                </button>
-                <button type="button" className="btn" onClick={() => { setHospOtpSent(false); setHospOtp(''); }}>Change Phone</button>
+
+          {/* State 4: Set / Reset Password */}
+          {hospMode === 'set_password' && (
+            <form onSubmit={saveHospPasswordAndProceed}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: 14, marginBottom: 14 }}>
+                <h3 style={{ margin: '0 0 4px', color: '#166534' }}>
+                  {hospResetFlow ? '🔐 Reset Your Account Password' : '🔐 Set Your Account Password'}
+                </h3>
+                <p className="muted" style={{ margin: 0, fontSize: '0.88rem' }}>
+                  {hospResetFlow
+                    ? 'Enter your new password below. Your old password will be replaced immediately.'
+                    : 'Set a password now so you can sign in directly next time without waiting for a WhatsApp OTP!'}
+                </p>
               </div>
-            </>
+
+              <Field label="New Password (min 6 characters)">
+                <PasswordInput
+                  value={hospNewPassword}
+                  onChange={e => setHospNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  autoFocus
+                />
+              </Field>
+
+              <Field label="Confirm Password">
+                <PasswordInput
+                  value={hospConfirmPassword}
+                  onChange={e => setHospConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                />
+              </Field>
+
+              <div className="row" style={{ marginTop: 14, gap: 10 }}>
+                <button type="submit" disabled={busy || !hospNewPassword || hospNewPassword.length < 6}>
+                  {busy ? t('loading') : (hospResetFlow ? 'Reset Password & Sign In' : 'Save Password & Enter')}
+                </button>
+                <button type="button" className="btn" onClick={skipHospPasswordAndProceed} disabled={busy}>
+                  {hospResetFlow ? 'Skip & Sign In →' : 'Skip for Now →'}
+                </button>
+              </div>
+            </form>
           )}
         </section>
       )}

@@ -116,7 +116,10 @@ api.get('/auth/me', auth.me);
 api.patch('/auth/profile', requireRole('patient'), auth.updateProfile);
 api.post('/auth/logout', auth.logout);
 
-// ---- Hospital Staff Auth (WhatsApp OTP only — DEC-056) ----
+// ---- Hospital Staff Auth (Password + WhatsApp OTP — DEC-056) ----
+api.post('/auth/staff/check-phone', hospAuth.checkStaffPhone);
+api.post('/auth/staff/password-login', authLimiter, hospAuth.staffPasswordLogin);
+api.post('/auth/staff/set-password', hospAuth.setStaffPassword);
 api.post('/auth/staff/otp/send', authLimiter, hospAuth.sendStaffOtp);
 api.post('/auth/staff/otp/verify', authLimiter, hospAuth.verifyStaffOtp);
 api.post('/auth/choose-role', authLimiter, hospAuth.chooseRole);
