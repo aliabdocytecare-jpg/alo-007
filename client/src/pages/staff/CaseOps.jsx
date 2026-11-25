@@ -34,7 +34,6 @@ function NurseDesk({ c, reload }) {
   const [tripartite, setTripartite] = useState(true);
   const [triSpecialist, setTriSpecialist] = useState({ name: '', phone: '' });
   const [cancelReason, setCancelReason] = useState('');
-  const [escNote, setEscNote] = useState('');
   const [generatedLink, setGeneratedLink] = useState('');
   const [intlConsultants, setIntlConsultants] = useState([]);
   const [manualSpec, setManualSpec] = useState(false);
@@ -103,42 +102,12 @@ function NurseDesk({ c, reload }) {
   const have = new Set((c.documents || []).map(d => d.category));
   const readOnlyIntake = c.intake_completed;
 
-  // High-Risk Triage Detection (Cardiology, Oncology, Acute/Emergency Symptoms)
-  const isHighRisk = ['Cardiology', 'Oncology'].includes(c.specialty)
-    || (c.history?.symptoms && /chest|breath|shortness|stroke|severe|acute|bleeding/i.test(c.history.symptoms))
-    || (c.reason && /urgent|emergency|chest|severe|unconscious/i.test(c.reason));
-
   return (
     <section className="box">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>🩺 ALO Nurse Desk — Unified Care Stream Command</h2>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <span className="badge" style={{ background: '#0284c7', color: '#fff', fontSize: '0.8rem', padding: '4px 8px', borderRadius: '4px' }}>
-            ✓ Iqama / Saudi ID Verified
-          </span>
-          <span className="badge" style={{ background: '#059669', color: '#fff', fontSize: '0.8rem', padding: '4px 8px', borderRadius: '4px' }}>
-            SCFHS: {c.specialty || 'General Practice'} Privileges Verified
-          </span>
-        </div>
       </div>
       <ActionMsg state={state} />
-
-      {/* Clinical Triage Protocol Banner */}
-      {isHighRisk ? (
-        <div style={{ background: '#fef2f2', border: '1px solid #f87171', color: '#991b1b', padding: '12px 16px', borderRadius: '8px', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: '1.25rem' }}>🚨</span>
-            <div>
-              <strong>MANDATORY CLINICAL CALL REQUIRED</strong> — High-risk presentation flagged ({c.specialty || 'Critical symptoms'}). Contact patient directly before doctor assignment:
-              <a href={`tel:${c.patient?.phone}`} style={{ color: '#b91c1c', fontWeight: 700, marginLeft: 6 }}>{c.patient?.phone}</a>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', padding: '8px 12px', borderRadius: '6px', marginBottom: 14, fontSize: '0.88rem' }}>
-          💬 <strong>Light-Touch Protocol</strong> — Standard non-emergent case. WhatsApp coordination sufficient.
-        </div>
-      )}
 
       {/* De-Identification, Document Re-Upload, Translation & 3 Compulsory Questions */}
       <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '14px', marginBottom: 14 }}>
@@ -516,40 +485,6 @@ function NurseDesk({ c, reload }) {
         </div>
       )}
 
-      {/* Bilingual AI Summary Panel */}
-      <div style={{ marginTop: 14, border: '1px solid #cbd5e1', borderRadius: '8px', padding: 12 }}>
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h3>🤖 {t('aiSummary')} [{c.ai_summary_status || 'none'}]</h3>
-          <div className="row">
-            <button onClick={() => run(() => api.post(`/cases/${c.id}/ai-summary/generate`))}>
-              {c.ai_summary_en ? 'Regenerate' : 'Generate AI Summary'}
-            </button>
-            {c.ai_summary_en && c.ai_summary_status !== 'approved' && (
-              <button onClick={() => run(() => api.post(`/cases/${c.id}/ai-summary/approve`))}>{t('aiApprove')}</button>
-            )}
-          </div>
-        </div>
-        {c.ai_summary_en && (
-          <div style={{ marginTop: 8 }}>
-            <p><strong>Clinical Presentation:</strong> {c.ai_summary_en.clinical_presentation}</p>
-            {c.ai_summary_en.key_findings && (
-              <p className="muted"><strong>Key Findings:</strong> {c.ai_summary_en.key_findings.join('; ')}</p>
-            )}
-            {c.ai_summary_en.pending_questions && (
-              <p className="muted"><strong>Pending Questions:</strong> {c.ai_summary_en.pending_questions.join('; ')}</p>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Itemized Reports Request Panel */}
-      <div style={{ marginTop: 14, border: '1px solid #cbd5e1', borderRadius: '8px', padding: 12 }}>
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h3>📋 {t('reportsChecklist')}</h3>
-          <ItemizedReportsModal caseId={c.id} onRequested={reload} />
-        </div>
-      </div>
-
       {/* Active Specialist Magic Link Console (Visible whenever a link exists, or for assigned/scheduled cases) */}
       {(generatedLink || latestLink || ['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED', 'APPOINTMENT_SCHEDULED', 'IN_PROGRESS', 'REVIEW_RECEIVED'].includes(c.status)) && (
         <div style={{ marginTop: 14, border: '1px solid #0284c7', borderRadius: '8px', padding: 14, background: '#f0f9ff' }}>
@@ -745,10 +680,6 @@ function NurseDesk({ c, reload }) {
 
       {!['COMPLETED', 'CANCELLED', 'FOLLOW_UP'].includes(c.status) && (
         <div style={{ marginTop: 12 }}>
-          <div className="row">
-            <input style={{ maxWidth: 280 }} placeholder={t('escalateNote')} value={escNote} onChange={e => setEscNote(e.target.value)} />
-            <button onClick={() => run(() => api.post(`/cases/${c.id}/escalate`, { note: escNote }))}>{t('escalate')}</button>
-          </div>
           <div className="row" style={{ marginTop: 8 }}>
             <input style={{ maxWidth: 280 }} placeholder={t('cancelReason')} value={cancelReason} onChange={e => setCancelReason(e.target.value)} />
             <button disabled={!cancelReason.trim()} onClick={() => { if (window.confirm(t('confirmSubmit'))) run(() => api.post(`/cases/${c.id}/cancel`, { reason: cancelReason })); }}>{t('cancelCase')}</button>
@@ -1030,80 +961,6 @@ function Bridge1ReferralForm({ caseId, onReferred }) {
         {busy ? t('loading') : 'Book Slot & Generate Check-in Code'}
       </button>
     </form>
-  );
-}
-
-function ItemizedReportsModal({ caseId, onRequested }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [items, setItems] = useState([{ name: '', required: true, category: 'Medical Report' }]);
-  const [notes, setNotes] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-
-  const addItem = () => setItems([...items, { name: '', required: true, category: 'Medical Report' }]);
-
-  const doSubmit = async (e) => {
-    e?.preventDefault();
-    const valid = items.filter(i => i.name.trim());
-    if (!valid.length) return;
-    setBusy(true); setErr('');
-    try {
-      await api.post(`/cases/${caseId}/reports-requests`, { items: valid, notes });
-      setOpen(false);
-      onRequested?.();
-    } catch (e) {
-      setErr(errMsg(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!open) return <button onClick={() => setOpen(true)}>+ Request Checklist Items</button>;
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div className="box" style={{ background: '#fff', maxWidth: 520, width: '90%' }}>
-        <h3>Request Missing Reports Checklist</h3>
-        <Msg err={err} />
-        <form onSubmit={doSubmit}>
-          {items.map((it, idx) => (
-            <div key={idx} className="row" style={{ marginBottom: 6 }}>
-              <input
-                required
-                style={{ flex: 1 }}
-                placeholder={`Item ${idx + 1} (e.g. ECG Strip)`}
-                value={it.name}
-                onChange={e => {
-                  const copy = [...items];
-                  copy[idx].name = e.target.value;
-                  setItems(copy);
-                }}
-              />
-              <label style={{ fontSize: 12 }}>
-                <input
-                  type="checkbox"
-                  checked={it.required}
-                  onChange={e => {
-                    const copy = [...items];
-                    copy[idx].required = e.target.checked;
-                    setItems(copy);
-                  }}
-                /> Req
-              </label>
-            </div>
-          ))}
-          <button type="button" onClick={addItem} style={{ fontSize: 12, padding: '2px 8px', margin: '4px 0' }}>+ Add Item</button>
-          <Field label="Instructions Note for Patient">
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Please upload scans in original quality..." style={{ minHeight: 60 }} />
-          </Field>
-          <div className="row" style={{ marginTop: 12 }}>
-            <button type="submit" disabled={busy}>{busy ? t('loading') : 'Send Checklist via WhatsApp'}</button>
-            <button type="button" onClick={() => setOpen(false)}>Cancel</button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }
 
