@@ -17,6 +17,7 @@ export default function Login() {
   const [exists, setExists] = useState(false);
   const [mock, setMock] = useState(false);
   const [patientMode, setPatientMode] = useState('phone'); // 'phone' | 'password' | 'otp' | 'set_password'
+  const [isResetFlow, setIsResetFlow] = useState(false);
   const [patientPassword, setPatientPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -140,7 +141,7 @@ export default function Login() {
           }
         }
       }
-      if (!res.data?.hasPassword) {
+      if (!res.data?.hasPassword || isResetFlow) {
         setPatientMode('set_password');
         setBusy(false);
         return;
@@ -209,7 +210,7 @@ export default function Login() {
         <button onClick={toggle}>{t('language')}</button>
       </div>
       <div className="tabs">
-        <button className={tab === 'patient' ? 'active' : ''} onClick={() => { setTab('patient'); setErr(''); setForgotMode(false); setPatientMode('phone'); setPatientPassword(''); setNewPassword(''); setConfirmPassword(''); }}>{t('patientLogin')}</button>
+        <button className={tab === 'patient' ? 'active' : ''} onClick={() => { setTab('patient'); setErr(''); setForgotMode(false); setPatientMode('phone'); setIsResetFlow(false); setPatientPassword(''); setNewPassword(''); setConfirmPassword(''); }}>{t('patientLogin')}</button>
         <button className={tab === 'staff' ? 'active' : ''} onClick={() => { setTab('staff'); setErr(''); setForgotMode(false); }}>{t('staffLogin')}</button>
         <button className={tab === 'hospital' ? 'active' : ''} onClick={() => { setTab('hospital'); setErr(''); }}>Hospital Clinic (OTP)</button>
       </div>
@@ -265,7 +266,7 @@ export default function Login() {
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => triggerSendOtp()}
+                  onClick={() => { setIsResetFlow(false); triggerSendOtp(); }}
                   disabled={busy || !phone.trim()}
                   style={{ fontSize: '0.85rem' }}
                 >
@@ -309,11 +310,11 @@ export default function Login() {
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => triggerSendOtp()}
+                  onClick={() => { setIsResetFlow(true); triggerSendOtp(); }}
                   disabled={busy}
                   style={{ fontSize: '0.85rem' }}
                 >
-                  🔑 Forgot password? Sign in with OTP
+                  🔑 Forgot password? Reset via OTP
                 </button>
               </div>
             </form>
@@ -378,13 +379,17 @@ export default function Login() {
             </div>
           )}
 
-          {/* State 4: Set Password Prompt (First time / Post-OTP) */}
+          {/* State 4: Set / Reset Password Prompt (First time or Forgot Password) */}
           {patientMode === 'set_password' && (
             <form onSubmit={savePasswordAndProceed}>
               <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: 14, marginBottom: 14 }}>
-                <h3 style={{ margin: '0 0 4px', color: '#166534' }}>🔐 Set Your Account Password</h3>
+                <h3 style={{ margin: '0 0 4px', color: '#166534' }}>
+                  {isResetFlow ? '🔐 Reset Your Account Password' : '🔐 Set Your Account Password'}
+                </h3>
                 <p className="muted" style={{ margin: 0, fontSize: '0.88rem' }}>
-                  Set a password now so you can sign in directly next time without waiting for a WhatsApp OTP!
+                  {isResetFlow
+                    ? 'Enter your new password below. Your old password will be replaced immediately.'
+                    : 'Set a password now so you can sign in directly next time without waiting for a WhatsApp OTP!'}
                 </p>
               </div>
 
@@ -407,10 +412,10 @@ export default function Login() {
 
               <div className="row" style={{ marginTop: 14, gap: 10 }}>
                 <button type="submit" disabled={busy || !newPassword || newPassword.length < 6}>
-                  {busy ? t('loading') : 'Save Password & Enter'}
+                  {busy ? t('loading') : (isResetFlow ? 'Reset Password & Sign In' : 'Save Password & Enter')}
                 </button>
                 <button type="button" className="btn" onClick={skipPasswordAndProceed} disabled={busy}>
-                  Skip for Now →
+                  {isResetFlow ? 'Skip & Sign In →' : 'Skip for Now →'}
                 </button>
               </div>
             </form>
