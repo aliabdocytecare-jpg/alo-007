@@ -473,7 +473,7 @@ function HospitalsTab() {
   const { data: hospData, err: hospErr, reload: reloadHosps } = useAsync(() => api.get('/admin/hospitals').then(r => r.data.hospitals || []));
   const { data: staffData, reload: reloadStaff } = useAsync(() => api.get('/admin/staff').then(r => r.data || []));
 
-  const [form, setForm] = useState({ name: '', short_name: '', city: 'Riyadh', phone: '', kiosk_pin: '' });
+  const [form, setForm] = useState({ name: '', short_name: '', city: 'Riyadh', phone: '' });
   const [adminModalHosp, setAdminModalHosp] = useState(null);
   const [adminForm, setAdminForm] = useState({ full_name: '', phone: '', preferred_lang: 'en' });
   const [state, setState] = useState({ err: '', ok: '' });
@@ -492,11 +492,22 @@ function HospitalsTab() {
         name: form.name.trim(),
         short_name: form.short_name.trim().toUpperCase() || form.name.slice(0, 4).toUpperCase(),
         city: form.city.trim(),
-        phone: form.phone.trim() || null,
-        kiosk_pin: form.kiosk_pin.trim() || undefined
+        phone: form.phone.trim() || null
       });
       setState({ ok: 'Hospital provisioned successfully!', err: '' });
-      setForm({ name: '', short_name: '', city: 'Riyadh', phone: '', kiosk_pin: '' });
+      setForm({ name: '', short_name: '', city: 'Riyadh', phone: '' });
+      reloadAll();
+    } catch (err) {
+      setState({ err: errMsg(err), ok: '' });
+    }
+  };
+
+  const deleteHosp = async (h) => {
+    if (!window.confirm(`Are you sure you want to permanently delete hospital "${h.name}" (${h.short_name})?`)) return;
+    setState({ err: '', ok: '' });
+    try {
+      const res = await api.delete(`/admin/hospitals/${h.id}`);
+      setState({ ok: res.data?.message || `Hospital "${h.name}" deleted.`, err: '' });
       reloadAll();
     } catch (err) {
       setState({ err: errMsg(err), ok: '' });
@@ -552,7 +563,6 @@ function HospitalsTab() {
             <th>{t('hospitalName')}</th>
             <th>{t('shortName')}</th>
             <th>{t('city')}</th>
-            <th>{t('kioskPin')}</th>
             <th>{t('status')}</th>
             <th>{t('roleHospitalAdmin')}</th>
             <th>{t('actions')}</th>
@@ -566,7 +576,6 @@ function HospitalsTab() {
                 <td><strong>{h.name}</strong></td>
                 <td><code>{h.short_name}</code></td>
                 <td>{h.city}</td>
-                <td><code>{h.kiosk_pin}</code></td>
                 <td>{h.is_active ? t('active') : t('inactive')}</td>
                 <td>
                   {hospAdmins.length === 0 ? (
@@ -603,6 +612,12 @@ function HospitalsTab() {
                       onClick={() => toggleHosp(h)}
                     >
                       {h.is_active ? t('deactivate') : t('activate')}
+                    </button>
+                    <button
+                      style={{ fontSize: 12, padding: '3px 8px', color: '#dc2626', borderColor: '#fca5a5', backgroundColor: '#fef2f2' }}
+                      onClick={() => deleteHosp(h)}
+                    >
+                      {t('deleteStaff') || 'Delete'}
                     </button>
                   </div>
                 </td>
@@ -688,15 +703,6 @@ function HospitalsTab() {
               placeholder="e.g. +966112345678"
               value={form.phone}
               onChange={e => setForm({ ...form, phone: e.target.value })}
-            />
-          </Field>
-          <Field label={t('kioskPin') + ' (6 digits, optional)'}>
-            <input
-              dir="ltr"
-              maxLength={6}
-              placeholder="Leave blank to auto-generate"
-              value={form.kiosk_pin}
-              onChange={e => setForm({ ...form, kiosk_pin: e.target.value })}
             />
           </Field>
         </div>

@@ -113,6 +113,31 @@ export const updateHospital = ah(async (req, res) => {
 });
 
 /**
+ * DELETE /api/v1/admin/hospitals/:id
+ */
+export const deleteHospital = ah(async (req, res) => {
+  const { id } = req.params;
+  const { data: existing } = await db.from('hospitals').select('id, name').eq('id', id).maybeSingle();
+  if (!existing) throw httpError(404, 'Hospital not found');
+
+  // Remove affiliated hospital staff records first to avoid FK blocks on test/unused hospitals
+  await db.from('staff_users').delete().eq('hospital_id', id);
+
+  const { error } = await db.from('hospitals').delete().eq('id', id);
+  if (error) {
+    throw httpError(409, `Cannot delete hospital "${existing.name}" because it has linked clinical cases or invoices. Deactivate it instead.`);
+  }
+
+  await audit(req, 'HOSPITAL_DELETED', {
+    resourceType: 'hospital',
+    resourceId: id,
+    detail: { name: existing.name }
+  });
+
+  res.json({ ok: true, message: `Hospital "${existing.name}" deleted.` });
+});
+
+/**
  * POST /api/v1/admin/hospitals/:id/admins
  * Creates a hospital_admin for a hospital tenant (D5: ALO admin creates hospital_admin)
  */

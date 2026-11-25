@@ -218,6 +218,7 @@ api.get('/admin/hospitals', requireRole('admin'), hospAdmin.listHospitals);
 api.post('/admin/hospitals', requireRole('admin'), hospAdmin.createHospital);
 api.get('/admin/hospitals/:id', requireRole('admin'), hospAdmin.getHospital);
 api.patch('/admin/hospitals/:id', requireRole('admin'), hospAdmin.updateHospital);
+api.delete('/admin/hospitals/:id', requireRole('admin'), hospAdmin.deleteHospital);
 api.post('/admin/hospitals/:id/admins', requireRole('admin'), hospAdmin.createHospitalAdmin);
 api.post('/admin/staff/:id/release-phone', requireRole('admin'), hospAdmin.releaseStaffPhone);
 api.post('/admin/staff/:id/login-link', requireRole('admin'), hospAdmin.issueBreakGlassLink);
