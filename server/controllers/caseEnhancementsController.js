@@ -396,7 +396,13 @@ export const dispatchCaseReview = ah(async (req, res) => {
     recipientPhone: specialist_phone,
     channels: ['whatsapp'],
     title: `Medical Review Round ${nextRound}`,
-    body: `Dear Dr. ${specialist_name}, you have been assigned case ${c.case_number} for specialist review (Round ${nextRound}: ${reqType}). Open secure case: ${reviewUrl} — expires in 72 hours.`
+    body: `Dear Dr. ${specialist_name}, you have been assigned case ${c.case_number} for specialist review (Round ${nextRound}: ${reqType}). Open secure case: ${reviewUrl} — expires in 72 hours.`,
+    templateParams: {
+      specialistName: specialist_name.trim(),
+      caseNumber: c.case_number,
+      specialty: c.specialty || 'Medical Review',
+      token: rawToken
+    }
   });
 
   await audit(req, 'MAGIC_LINK_ISSUED', {

@@ -199,3 +199,35 @@ export async function sendBodyTemplate(cfg, to, name, lang, params) {
     }
   });
 }
+
+// UTILITY template with dynamic URL button for specialist magic links (N-06).
+export async function sendSpecialistMagicLinkTemplate(cfg, to, { specialistName, caseNumber, specialty, token }, lang = 'en_US') {
+  const templateName = 'specialist_magic_link';
+  await assertTemplateCategory(cfg, templateName, lang, REQUIRED_CATEGORY.notify);
+  return graph(cfg, `${cfg.phoneNumberId}/messages`, {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: digits(to),
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: lang },
+      components: [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: String(specialistName || 'Doctor').slice(0, 200) },
+            { type: 'text', text: String(caseNumber || 'Case').slice(0, 100) },
+            { type: 'text', text: String(specialty || 'General Medicine').slice(0, 100) }
+          ]
+        },
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: '0',
+          parameters: [{ type: 'text', text: String(token) }]
+        }
+      ]
+    }
+  });
+}

@@ -1,7 +1,7 @@
 // Bible F-NOTIF / Part 7. In-app always real; WhatsApp is settings-driven (DEC-051).
 // BR-017: callers must never put PHI (diagnosis, meds, clinical detail) in title/body.
 import { db } from '../config/db.js';
-import { getWhatsAppConfig, whatsappMode, sendBodyTemplate } from './whatsappService.js';
+import { getWhatsAppConfig, whatsappMode, sendBodyTemplate, sendSpecialistMagicLinkTemplate } from './whatsappService.js';
 
 // Recipient phone lives on patients/staff_users; specialists pass it explicitly.
 async function phoneFor(recipientType, recipientId) {
@@ -14,7 +14,7 @@ async function phoneFor(recipientType, recipientId) {
 
 // DEC-051: returns {status, reason, messageId} so the log records what really happened.
 // Mock mode keeps the pre-existing dev behaviour (terminal line, no network call).
-async function whatsappSend({ recipientType, recipientId, recipientPhone, title, body }) {
+async function whatsappSend({ event, recipientType, recipientId, recipientPhone, title, body, templateParams }) {
   const cfg = await getWhatsAppConfig();
   const mode = whatsappMode(cfg, 'notify');
   if (mode === 'mock') {
@@ -22,11 +22,15 @@ async function whatsappSend({ recipientType, recipientId, recipientPhone, title,
     return { status: 'mock_sent', reason: null };
   }
   if (!cfg.notifyEnabled) return { status: 'skipped', reason: 'notify_disabled' };
-  if (!cfg.notifyTemplate) return { status: 'skipped', reason: 'notify_template_not_set' };
   if (mode === 'not_configured') return { status: 'failed', reason: 'whatsapp_not_configured' };
   const to = recipientPhone || await phoneFor(recipientType, recipientId);
   if (!to) return { status: 'skipped', reason: 'no_phone_on_file' };
   try {
+    if (event === 'N-06' && templateParams?.token) {
+      const r = await sendSpecialistMagicLinkTemplate(cfg, to, templateParams, cfg.notifyLang || 'en_US');
+      return { status: 'sent', reason: null, messageId: r?.messages?.[0]?.id };
+    }
+    if (!cfg.notifyTemplate) return { status: 'skipped', reason: 'notify_template_not_set' };
     const r = await sendBodyTemplate(cfg, to, cfg.notifyTemplate, cfg.notifyLang, [title, body]);
     return { status: 'sent', reason: null, messageId: r?.messages?.[0]?.id };
   } catch (err) {
@@ -35,7 +39,7 @@ async function whatsappSend({ recipientType, recipientId, recipientPhone, title,
   }
 }
 
-export async function notify({ event, caseId = null, recipientType, recipientId = null, recipientPhone = null, title, body = '', channels = ['in-app', 'whatsapp'] }) {
+export async function notify({ event, caseId = null, recipientType, recipientId = null, recipientPhone = null, title, body = '', channels = ['in-app', 'whatsapp'], templateParams = null }) {
   // Part 8.3 dedupe: same event + recipient + case within 60s is discarded.
   const since = new Date(Date.now() - 60_000).toISOString();
   let dupQuery = db.from('notification_log').select()
@@ -55,7 +59,7 @@ export async function notify({ event, caseId = null, recipientType, recipientId 
     let status = 'sent', failureReason = null;
     const detail = { title, body };
     if (channel === 'whatsapp') {
-      const out = await whatsappSend({ recipientType, recipientId, recipientPhone, title, body });
+      const out = await whatsappSend({ event, recipientType, recipientId, recipientPhone, title, body, templateParams });
       status = out.status;
       failureReason = out.reason;
       if (out.messageId) detail.message_id = out.messageId;

@@ -31,7 +31,7 @@ function NurseDesk({ c, reload }) {
   const [clinic, setClinic] = useState({ name: '', address: '' });
   const [meet, setMeet] = useState('');
   const [spec, setSpec] = useState({ name: '', phone: '' });
-  const [tripartite, setTripartite] = useState(false);
+  const [tripartite, setTripartite] = useState(true);
   const [triSpecialist, setTriSpecialist] = useState({ name: '', phone: '' });
   const [cancelReason, setCancelReason] = useState('');
   const [escNote, setEscNote] = useState('');
@@ -213,7 +213,7 @@ function NurseDesk({ c, reload }) {
 
       {c.service_type === 'CONSULTATION' && ['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status) && (
         <div style={{ marginTop: 12, border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px', background: '#fdfdfe' }}>
-          <h4 style={{ margin: '0 0 8px' }}>📅 Stream 2: Joint Online Consultation Scheduling</h4>
+          <h4 style={{ margin: '0 0 8px' }}>📅 Stream 2: Online Consultation Scheduling & Consultant Magic Link</h4>
           <div className="grid2">
             <Field label="Appointment Date & Time"><input type="datetime-local" value={schedAt} onChange={e => setSchedAt(e.target.value)} /></Field>
             <Field label="Google Meet Room Link">
@@ -234,10 +234,6 @@ function NurseDesk({ c, reload }) {
             </Field>
           </div>
           <div style={{ marginTop: 8 }}>
-            <label style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="checkbox" checked={tripartite} onChange={e => setTripartite(e.target.checked)} />
-              Enable Live Tripartite Session (Saudi Hospital Doctor + Indian Specialist)
-            </label>
             {tripartite && (
               <div style={{ marginTop: 8 }}>
                 {!manualSpec && intlConsultants.length > 0 ? (

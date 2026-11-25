@@ -38,7 +38,9 @@ export const completeIntake = ah(async (req, res) => {
 export const schedule = ah(async (req, res) => {
   const c = req.case;
   if (c.service_type !== 'CONSULTATION') throw httpError(409, 'Only consultation cases can be scheduled.');
-  if (c.status !== 'SPECIALIST_ASSIGNED') throw httpError(409, 'Assign a doctor before scheduling.');
+  if (!['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status)) {
+    throw httpError(409, 'Case must be ready for assignment or assigned before scheduling.');
+  }
   const { scheduled_at, clinic_name, clinic_address, meet_url, is_tripartite, specialist_name, specialist_phone } = req.body;
   if (!scheduled_at || new Date(scheduled_at) <= new Date()) throw httpError(400, 'Appointment must be in the future.');
   const { data: assigns } = await db.from('case_assignments').select().eq('case_id', c.id);
@@ -52,18 +54,42 @@ export const schedule = ah(async (req, res) => {
   if (error) throw httpError(500, error.message);
 
   let tokenResult = null;
-  if (is_tripartite && specialist_name && specialist_phone) {
+  if ((is_tripartite || (specialist_name && specialist_phone)) && specialist_name && specialist_phone) {
     try {
       tokenResult = await issueLink(c.id, specialist_name.trim(), specialist_phone, req.session.sub);
+      const appOrigin = (process.env.CLIENT_ORIGIN || 'https://alodoc.online').split(',')[0].trim();
+      await notify({
+        event: 'N-06',
+        caseId: c.id,
+        recipientType: 'specialist',
+        recipientPhone: specialist_phone,
+        channels: ['whatsapp'],
+        title: 'Online Consultation Assigned',
+        body: `Dear Dr. ${specialist_name.trim()}, you have an online consultation for case ${c.case_number}. Open: ${appOrigin}/review/${tokenResult.token}`,
+        templateParams: {
+          specialistName: specialist_name.trim(),
+          caseNumber: c.case_number,
+          specialty: c.specialty || 'Online Consultation',
+          token: tokenResult.token
+        }
+      });
     } catch (e) {
       console.error('Tripartite specialist link dispatch error:', e?.message);
     }
   }
 
+  if (c.status === 'READY_FOR_ASSIGNMENT') {
+    await transition(c.id, 'SPECIALIST_ASSIGNED', {
+      actorId: req.session.sub,
+      actorRole: req.session.role || 'nurse',
+      note: `Assigned consultant ${specialist_name || 'Online Specialist'}`
+    });
+  }
+
   await transition(c.id, 'APPOINTMENT_SCHEDULED', {
     actorId: req.session.sub,
     actorRole: req.session.role || 'nurse',
-    note: `Appointment: ${scheduled_at}${is_tripartite ? ` (Live Tripartite Video: Saudi Doctor + ${specialist_name})` : ''}`
+    note: `Appointment: ${scheduled_at}${specialist_name ? ` (Online Consultation with ${specialist_name})` : ''}`
   });
   await notify({
     event: 'N-03',
