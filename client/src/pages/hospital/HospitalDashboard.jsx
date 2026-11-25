@@ -51,6 +51,7 @@ export default function HospitalDashboard() {
   const [isAbnormal, setIsAbnormal] = useState(false);
   const [isCritical, setIsCritical] = useState(false);
   const [amendReason, setAmendReason] = useState('');
+  const [newTest, setNewTest] = useState({ name: '', category: 'Hematology', specimen_type: 'Blood', description: '' });
 
   // 4. Pharmacy State
   const [rxQueue, setRxQueue] = useState([]);
@@ -81,7 +82,7 @@ export default function HospitalDashboard() {
         const qRes = await api.get('/hospital/reception/queue');
         setQueue(qRes.data.queue || {});
       }
-      if (tab === 'doctor') {
+      if (tab === 'doctor' || tab === 'lab' || tab === 'hospital_admin') {
         const catRes = await api.get('/hospital/test-catalogue').catch(() => ({ data: { catalogue: [] } }));
         setTestCatalogue(catRes.data.catalogue || []);
       }
@@ -111,14 +112,33 @@ export default function HospitalDashboard() {
   }, [tab]);
 
   // Reception check-in handler
-  const doCheckin = async (e) => {
+  const doCheckin = async (e, overrideCode) => {
     e?.preventDefault();
-    if (!checkinCode) return;
+    const code = (overrideCode || checkinCode || '').trim().toUpperCase();
+    if (!code) return;
     setErr(''); setOk('');
     try {
-      const { data } = await api.post('/hospital/reception/checkin', { checkin_code: checkinCode.trim().toUpperCase() });
+      const { data } = await api.post('/hospital/reception/checkin', { checkin_code: code });
       setOk(`Patient checked in! Queue Number: ${data.queue_number}`);
       setCheckinCode('');
+      reloadData();
+    } catch (e) { setErr(errMsg(e)); }
+  };
+
+  // Lab / Hospital Admin: Add Lab Test to Hospital Catalogue
+  const addLabTest = async (e) => {
+    e?.preventDefault();
+    if (!newTest.name.trim()) return;
+    setErr(''); setOk('');
+    try {
+      await api.post('/hospital/test-catalogue', {
+        name: newTest.name.trim(),
+        category: newTest.category.trim() || 'General',
+        specimen_type: newTest.specimen_type.trim() || 'Blood',
+        description: newTest.description.trim() || null
+      });
+      setOk(`Lab test "${newTest.name.trim()}" added to hospital catalogue.`);
+      setNewTest({ name: '', category: 'Hematology', specimen_type: 'Blood', description: '' });
       reloadData();
     } catch (e) { setErr(errMsg(e)); }
   };
@@ -361,7 +381,7 @@ export default function HospitalDashboard() {
                   <div key={c.id} style={{ borderBottom: '1px solid #ddd', padding: '6px 0' }}>
                     <strong>{c.patient?.full_name}</strong>
                     <div className="muted">{c.appointment_time || 'No time'} · Code: {c.checkin_code}</div>
-                    <button style={{ marginTop: 4, padding: '2px 8px', fontSize: 11 }} onClick={() => { setCheckinCode(c.checkin_code); }}>Check-in</button>
+                    <button style={{ marginTop: 4, padding: '2px 8px', fontSize: 11 }} onClick={() => doCheckin(null, c.checkin_code)}>Check-in</button>
                   </div>
                 ))}
               </div>
@@ -599,6 +619,38 @@ export default function HospitalDashboard() {
               </div>
             </section>
           )}
+          <section className="box" style={{ marginTop: 14 }}>
+            <h2>Lab Test Catalogue ({testCatalogue.length})</h2>
+            <p className="muted" style={{ marginTop: -4 }}>Add laboratory tests available at this hospital so Doctors can order them during consultation.</p>
+            {testCatalogue.length > 0 && (
+              <table style={{ marginBottom: 14 }}>
+                <thead><tr><th>Test Name</th><th>Category</th><th>Specimen</th></tr></thead>
+                <tbody>
+                  {testCatalogue.map(item => (
+                    <tr key={item.id}><td><strong>{item.name}</strong></td><td>{item.category}</td><td>{item.specimen_type}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <form onSubmit={addLabTest}>
+              <div className="grid2">
+                <Field label="Test Name *"><input required value={newTest.name} onChange={e => setNewTest({ ...newTest, name: e.target.value })} placeholder="e.g. Complete Blood Count (CBC)" /></Field>
+                <Field label="Category *"><input required value={newTest.category} onChange={e => setNewTest({ ...newTest, category: e.target.value })} placeholder="e.g. Hematology, Biochemistry" /></Field>
+                <Field label="Specimen Type *">
+                  <select value={newTest.specimen_type} onChange={e => setNewTest({ ...newTest, specimen_type: e.target.value })}>
+                    <option value="Blood">Blood</option>
+                    <option value="Urine">Urine</option>
+                    <option value="Swab">Swab</option>
+                    <option value="Stool">Stool</option>
+                    <option value="Imaging">Imaging / Radiology</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </Field>
+                <Field label="Description (Optional)"><input value={newTest.description} onChange={e => setNewTest({ ...newTest, description: e.target.value })} placeholder="Fasting required, etc." /></Field>
+              </div>
+              <button type="submit" style={{ marginTop: 10 }}>+ Add Lab Test</button>
+            </form>
+          </section>
         </div>
       )}
 
@@ -761,6 +813,39 @@ export default function HospitalDashboard() {
                 ))}
               </tbody>
             </table>
+          </section>
+
+          <section className="box">
+            <h2>Lab Test Catalogue ({testCatalogue.length})</h2>
+            <p className="muted" style={{ marginTop: -4 }}>Add laboratory tests available at this hospital so Doctors can order them during consultation.</p>
+            {testCatalogue.length > 0 && (
+              <table style={{ marginBottom: 14 }}>
+                <thead><tr><th>Test Name</th><th>Category</th><th>Specimen</th></tr></thead>
+                <tbody>
+                  {testCatalogue.map(item => (
+                    <tr key={item.id}><td><strong>{item.name}</strong></td><td>{item.category}</td><td>{item.specimen_type}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <form onSubmit={addLabTest}>
+              <div className="grid2">
+                <Field label="Test Name *"><input required value={newTest.name} onChange={e => setNewTest({ ...newTest, name: e.target.value })} placeholder="e.g. Complete Blood Count (CBC)" /></Field>
+                <Field label="Category *"><input required value={newTest.category} onChange={e => setNewTest({ ...newTest, category: e.target.value })} placeholder="e.g. Hematology, Biochemistry" /></Field>
+                <Field label="Specimen Type *">
+                  <select value={newTest.specimen_type} onChange={e => setNewTest({ ...newTest, specimen_type: e.target.value })}>
+                    <option value="Blood">Blood</option>
+                    <option value="Urine">Urine</option>
+                    <option value="Swab">Swab</option>
+                    <option value="Stool">Stool</option>
+                    <option value="Imaging">Imaging / Radiology</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </Field>
+                <Field label="Description (Optional)"><input value={newTest.description} onChange={e => setNewTest({ ...newTest, description: e.target.value })} placeholder="Fasting required, etc." /></Field>
+              </div>
+              <button type="submit" style={{ marginTop: 10 }}>+ Add Lab Test</button>
+            </form>
           </section>
         </div>
       )}
