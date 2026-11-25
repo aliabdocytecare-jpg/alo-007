@@ -41,8 +41,38 @@ export const schedule = ah(async (req, res) => {
   if (!['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status)) {
     throw httpError(409, 'Case must be ready for assignment or assigned before scheduling.');
   }
-  const { scheduled_at, clinic_name, clinic_address, meet_url, is_tripartite, specialist_name, specialist_phone } = req.body;
+  const {
+    scheduled_at,
+    clinic_name,
+    clinic_address,
+    meet_url,
+    is_tripartite,
+    specialist_name,
+    specialist_phone,
+    deidentified_consent,
+    questions,
+    translated_reason_en,
+    translated_history_en
+  } = req.body;
   if (!scheduled_at || new Date(scheduled_at) <= new Date()) throw httpError(400, 'Appointment must be in the future.');
+
+  if (specialist_name && specialist_phone) {
+    if (!deidentified_consent) {
+      throw httpError(400, 'Saudi Privacy Law compliance: You must confirm that all patient-identifying information has been hidden/redacted.');
+    }
+    const cleanQuestions = Array.isArray(questions) ? questions.map(q => String(q || '').trim()).filter(Boolean) : [];
+    if (cleanQuestions.length < 3) {
+      throw httpError(400, 'All 3 compulsory clinical questions for the International Consultant are required.');
+    }
+    const updatedHistory = {
+      ...(typeof c.history === 'object' && c.history ? c.history : {}),
+      ...(translated_reason_en?.trim() ? { translated_reason_en: translated_reason_en.trim() } : {}),
+      ...(translated_history_en?.trim() ? { translated_history_en: translated_history_en.trim() } : {}),
+      nurse_questions: cleanQuestions,
+      deidentified_consent: true
+    };
+    await db.from('cases').update({ history: updatedHistory, updated_at: new Date().toISOString() }).eq('id', c.id);
+  }
   const { data: assigns } = await db.from('case_assignments').select().eq('case_id', c.id);
   const doctor = (assigns || []).find(a => a.role === 'doctor');
   const type = c.service_subtype === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE';
@@ -207,15 +237,16 @@ export const releaseReport = ah(async (req, res) => {
   }
 
   // Update cases table flags for DEC-056 / PDF generator compatibility
-  const reportTextEn = review?.findings
-    ? `FINDINGS:\n${review.findings}\n\nRECOMMENDATION:\n${review.recommendation}`
-    : (caseRev?.clinical_findings ? `FINDINGS:\n${caseRev.clinical_findings}\n\nRECOMMENDATION:\n${caseRev.recommendations || caseRev.diagnostic_assessment}` : cons?.final_report);
+  const { final_report_ar: bodyReportAr, final_report_en: bodyReportEn } = req.body || {};
+  const reportTextEn = bodyReportEn?.trim()
+    || (review?.findings ? `FINDINGS:\n${review.findings}\n\nRECOMMENDATION:\n${review.recommendation}` : null)
+    || (caseRev?.clinical_findings ? `FINDINGS:\n${caseRev.clinical_findings}\n\nRECOMMENDATION:\n${caseRev.recommendations || caseRev.diagnostic_assessment}` : cons?.final_report);
 
   await db.from('cases').update({
     final_report_published: true,
     final_report_published_at: now,
     final_report_en: reportTextEn || c.final_report_en || 'Specialist consultation complete',
-    final_report_ar: c.final_report_ar || reportTextEn || 'تم إصدار التقرير الطبي للمريض',
+    final_report_ar: bodyReportAr?.trim() || c.final_report_ar || reportTextEn || 'تم إصدار التقرير الطبي للمريض',
     updated_at: now
   }).eq('id', c.id);
 

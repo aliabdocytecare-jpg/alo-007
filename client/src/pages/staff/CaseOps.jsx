@@ -35,10 +35,53 @@ function NurseDesk({ c, reload }) {
   const [triSpecialist, setTriSpecialist] = useState({ name: '', phone: '' });
   const [cancelReason, setCancelReason] = useState('');
   const [escNote, setEscNote] = useState('');
-  const [v, setV] = useState({ blood_pressure: '', heart_rate: '', temperature: '', weight: '', height: '', spo2: '', nursing_notes: '' });
   const [generatedLink, setGeneratedLink] = useState('');
   const [intlConsultants, setIntlConsultants] = useState([]);
   const [manualSpec, setManualSpec] = useState(false);
+
+  // De-identification, Translation & 3 Compulsory Questions state
+  const [deidConsent, setDeidConsent] = useState(Boolean(c.history?.deidentified_consent));
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const [deidFile, setDeidFile] = useState(null);
+  const [deidUploading, setDeidUploading] = useState(false);
+  const [questions, setQuestions] = useState(
+    Array.isArray(c.history?.nurse_questions) && c.history.nurse_questions.length === 3
+      ? c.history.nurse_questions
+      : ['', '', '']
+  );
+  const [transEnReason, setTransEnReason] = useState(c.history?.translated_reason_en || c.reason || '');
+  const [transEnHistory, setTransEnHistory] = useState(c.history?.translated_history_en || '');
+  const [finalReportAr, setFinalReportAr] = useState(c.final_report_ar || '');
+
+  const allQuestionsFilled = questions.every(q => String(q || '').trim().length > 0);
+  const canDispatchToConsultant = deidConsent && allQuestionsFilled;
+
+  // Sort International Consultants so matching case specialty appears first
+  const sortedConsultants = [...intlConsultants].sort((a, b) => {
+    const aMatch = c.specialty && a.specialty?.toLowerCase() === c.specialty.toLowerCase() ? 0 : 1;
+    const bMatch = c.specialty && b.specialty?.toLowerCase() === c.specialty.toLowerCase() ? 0 : 1;
+    return aMatch - bMatch || a.full_name.localeCompare(b.full_name);
+  });
+
+  const uploadDeidentifiedDoc = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    if (!deidFile) return;
+    setDeidUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', deidFile);
+      fd.append('category', 'De-identified Medical Report');
+      fd.append('is_deidentified', 'true');
+      await api.post(`/cases/${c.id}/documents`, fd);
+      setDeidFile(null);
+      setShowConsentModal(true);
+      reload();
+    } catch (err) {
+      alert(errMsg(err));
+    } finally {
+      setDeidUploading(false);
+    }
+  };
 
   useEffect(() => {
     api.get('/staff/directory').then(r => setDirectory(r.data)).catch(() => {});
@@ -97,67 +140,138 @@ function NurseDesk({ c, reload }) {
         </div>
       )}
 
-      {/* Clinical Nursing Intake & Vitals Section */}
+      {/* De-Identification, Document Re-Upload, Translation & 3 Compulsory Questions */}
       <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '14px', marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a' }}>📋 Clinical Triage & Intake Vitals</h3>
-          <span className="badge" style={{ background: readOnlyIntake ? '#dcfce7' : '#fef3c7', color: readOnlyIntake ? '#166534' : '#92400e', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>
-            {readOnlyIntake ? '✓ Intake Completed' : 'Intake In Progress'}
+          <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a' }}>🛡️ Nurse Prep: De-Identification, Translation & 3 Questions</h3>
+          <span className="badge" style={{ background: deidConsent && allQuestionsFilled ? '#dcfce7' : '#fef3c7', color: deidConsent && allQuestionsFilled ? '#166534' : '#92400e', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem' }}>
+            {deidConsent && allQuestionsFilled ? '✓ Ready for Consultant' : 'Action Required'}
           </span>
         </div>
 
-        {/* Required Documents Checklist */}
-        <p style={{ margin: '4px 0 8px', fontSize: '0.88rem', fontWeight: 600, color: '#475569' }}>Required Documents Checklist:</p>
-        <table style={{ marginBottom: 12 }}>
-          <tbody>
-            {required.map(cat => (
-              <tr key={cat}>
-                <td style={{ padding: '4px 8px' }}>{cat}</td>
-                <td style={{ padding: '4px 8px' }}>{have.has(cat) ? <span style={{ color: '#16a34a', fontWeight: 600 }}>✓ Uploaded</span> : <strong style={{ color: '#dc2626' }}>[Missing]</strong>}</td>
-              </tr>
-            ))}
-            {!required.length && <tr><td className="muted">{t('noItems')}</td></tr>}
-          </tbody>
-        </table>
-
-        {/* Vitals Form */}
-        <div className="grid2">
-          <Field label={t('bp')}><input value={v.blood_pressure} onChange={e => setV({ ...v, blood_pressure: e.target.value })} placeholder="120/80" /></Field>
-          <Field label={t('hr')}><input type="number" value={v.heart_rate} onChange={e => setV({ ...v, heart_rate: e.target.value })} placeholder="72" /></Field>
-          <Field label={t('temp')}><input type="number" step="0.1" value={v.temperature} onChange={e => setV({ ...v, temperature: e.target.value })} placeholder="37.0" /></Field>
-          <Field label={t('weight')}><input type="number" step="0.1" value={v.weight} onChange={e => setV({ ...v, weight: e.target.value })} placeholder="70" /></Field>
-          <Field label={t('height')}><input type="number" value={v.height} onChange={e => setV({ ...v, height: e.target.value })} placeholder="170" /></Field>
-          <Field label={t('spo2')}><input type="number" value={v.spo2} onChange={e => setV({ ...v, spo2: e.target.value })} placeholder="98" /></Field>
+        {/* 1. Patient Documents Download & De-Identified Re-Upload */}
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, padding: 10, marginBottom: 12 }}>
+          <strong style={{ fontSize: '0.9rem' }}>1. Download Patient Documents & Upload De-Identified Files</strong>
+          <p className="muted" style={{ margin: '4px 0 8px', fontSize: '0.82rem' }}>
+            Download the patient&apos;s original documents, hide/redact all patient-identifying information (Name, ID/Iqama, Phone, File No.), and re-upload below. Only de-identified files are sent to the International Consultant.
+          </p>
+          {(c.documents || []).length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {(c.documents || []).map(d => (
+                <div key={d.id} className="row" style={{ justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px dashed #e2e8f0', fontSize: '0.85rem' }}>
+                  <span>
+                    {d.is_deidentified || d.category === 'De-identified Medical Report' ? '🟢 [De-Identified] ' : '📄 '}
+                    <strong>{d.file_name}</strong> <span className="muted">({d.category})</span>
+                  </span>
+                  <a href={`/api/v1/cases/${c.id}/documents/${d.id}?download=1`} target="_blank" rel="noreferrer" className="btn" style={{ padding: '2px 8px', fontSize: '0.78rem', textDecoration: 'none' }}>
+                    ⬇ Download
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+          <form onSubmit={uploadDeidentifiedDoc} className="row" style={{ gap: 8, marginTop: 8 }}>
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.docx" onChange={e => setDeidFile(e.target.files?.[0] || null)} />
+            <button type="submit" disabled={!deidFile || deidUploading} className="btn">
+              {deidUploading ? 'Uploading...' : '⬆ Upload De-Identified Document'}
+            </button>
+          </form>
         </div>
-        <Field label={t('nursingNotes')}><textarea value={v.nursing_notes} onChange={e => setV({ ...v, nursing_notes: e.target.value })} placeholder="Enter clinical observations, triage notes, or medical history verification..." /></Field>
-        <div className="row" style={{ marginTop: 10, gap: 10 }}>
-          <button onClick={() => run(() => api.post(`/cases/${c.id}/vitals`, v), 'Vitals saved')} className="btn">{t('save')} Vitals</button>
-          {!readOnlyIntake && (
+
+        {/* Consent Popup Modal right after uploading de-identified file */}
+        {showConsentModal && (
+          <div style={{ background: '#fef2f2', border: '2px solid #dc2626', borderRadius: 8, padding: 14, marginBottom: 12 }}>
+            <h4 style={{ margin: '0 0 6px', color: '#991b1b' }}>⚠️ Saudi Healthcare Privacy Consent (PDPL / MOH)</h4>
+            <p style={{ margin: '0 0 10px', fontSize: '0.88rem', color: '#7f1d1d' }}>
+              Have you hidden/redacted all patient-identifying information (Full Name, Iqama/National ID, Phone Number, Hospital File No.) from the uploaded documents as required by Saudi law?
+            </p>
+            <div className="row" style={{ gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => { setDeidConsent(true); setShowConsentModal(false); }}
+                style={{ background: '#16a34a', borderColor: '#16a34a', color: '#fff', fontWeight: 600 }}
+              >
+                ✓ Yes, Patient Info is Hidden (Confirm Consent)
+              </button>
+              <button type="button" className="btn" onClick={() => setShowConsentModal(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 2. Arabic -> English Translation for International Consultant */}
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, padding: 10, marginBottom: 12 }}>
+          <strong style={{ fontSize: '0.9rem' }}>2. Bilingual View & English Translation (Sent to Consultant)</strong>
+          <div className="grid2" style={{ marginTop: 8, gap: 10 }}>
+            <div>
+              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>Patient Original Submission (Arabic / English):</label>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 4, padding: 8, fontSize: '0.85rem', minHeight: 70 }}>
+                <div><strong>Reason:</strong> {c.reason || '—'}</div>
+                <div className="muted" style={{ marginTop: 4 }}>
+                  Symptoms: {c.history?.symptoms || '—'} · Diagnosis: {c.history?.diagnosis || '—'} · Meds: {c.history?.medications || '—'}
+                </div>
+              </div>
+            </div>
+            <div>
+              <Field label="English Clinical Summary for International Consultant">
+                <textarea
+                  value={transEnReason}
+                  onChange={e => setTransEnReason(e.target.value)}
+                  placeholder="Translate or refine the patient's complaint into clear English for the International Consultant..."
+                  style={{ minHeight: 70 }}
+                />
+              </Field>
+            </div>
+          </div>
+          <Field label="Additional English Clinical History (Optional)">
+            <input
+              value={transEnHistory}
+              onChange={e => setTransEnHistory(e.target.value)}
+              placeholder="Translated symptoms, past history, or medications in English..."
+            />
+          </Field>
+        </div>
+
+        {/* 3. 3 Compulsory Questions for International Consultant */}
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, padding: 10, marginBottom: 12 }}>
+          <strong style={{ fontSize: '0.9rem' }}>3. Compulsory Clinical Questions for Consultant (All 3 Required) *</strong>
+          <p className="muted" style={{ margin: '2px 0 8px', fontSize: '0.82rem' }}>
+            The International Consultant must answer all 3 questions before they can submit their opinion.
+          </p>
+          {[0, 1, 2].map(idx => (
+            <Field key={idx} label={`Question ${idx + 1} *`}>
+              <input
+                value={questions[idx] || ''}
+                onChange={e => {
+                  const next = [...questions];
+                  next[idx] = e.target.value;
+                  setQuestions(next);
+                }}
+                placeholder={`Enter compulsory clinical question ${idx + 1} in English...`}
+              />
+            </Field>
+          ))}
+        </div>
+
+        {/* 4. Mandatory Saudi Law Consent Checkbox */}
+        <div style={{ background: deidConsent ? '#f0fdf4' : '#fef2f2', border: `1px solid ${deidConsent ? '#86efac' : '#fca5a5'}`, borderRadius: 6, padding: 10 }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem', color: deidConsent ? '#166534' : '#991b1b' }}>
+            <input type="checkbox" checked={deidConsent} onChange={e => setDeidConsent(e.target.checked)} style={{ marginTop: 3 }} />
+            <span>
+              Saudi Law Compliance (PDPL / MOH): I confirm that all patient-identifying information has been hidden/redacted from the documents before sending to the International Consultant. *
+            </span>
+          </label>
+        </div>
+
+        {!readOnlyIntake && (
+          <div className="row" style={{ marginTop: 10 }}>
             <button
-              onClick={() => run(async () => {
-                if (v.blood_pressure || v.heart_rate || v.temperature || v.weight || v.height || v.spo2 || v.nursing_notes) {
-                  await api.post(`/cases/${c.id}/vitals`, v);
-                }
-                await api.post(`/cases/${c.id}/intake-complete`);
-              }, 'Triage intake completed!')}
+              onClick={() => run(() => api.post(`/cases/${c.id}/intake-complete`), 'Nurse review completed!')}
               style={{ background: '#059669', borderColor: '#059669', color: '#fff', fontWeight: 600, padding: '6px 14px' }}
             >
-              ✓ Complete Triage Intake
+              ✓ Complete Nurse Prep
             </button>
-          )}
-        </div>
-
-        {!!c.vitals?.length && (
-          <div style={{ marginTop: 12 }}>
-            <p style={{ margin: '4px 0', fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>Recorded Vitals History:</p>
-            <table>
-              <thead><tr><th>{t('time')}</th><th>{t('bp')}</th><th>{t('hr')}</th><th>{t('temp')}</th><th>{t('spo2')}</th><th>{t('nursingNotes')}</th></tr></thead>
-              <tbody>
-                {c.vitals.map(x => (
-                  <tr key={x.id}><td>{fmtDate(x.created_at)}</td><td>{x.blood_pressure || '—'}</td><td>{x.heart_rate ?? '—'}</td><td>{x.temperature ?? '—'}</td><td>{x.spo2 ?? '—'}</td><td>{x.nursing_notes || '—'}</td></tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         )}
       </div>
@@ -236,22 +350,27 @@ function NurseDesk({ c, reload }) {
           <div style={{ marginTop: 8 }}>
             {tripartite && (
               <div style={{ marginTop: 8 }}>
-                {!manualSpec && intlConsultants.length > 0 ? (
-                  <Field label="Select International Consultant">
+                {!manualSpec && sortedConsultants.length > 0 ? (
+                  <Field label={`Select International Consultant${c.specialty ? ` (Case Specialty: ${c.specialty})` : ''}`}>
                     <div className="row" style={{ gap: 8 }}>
                       <select
                         value={triSpecialist.id || ''}
                         onChange={e => {
-                          const found = intlConsultants.find(ic => ic.id === e.target.value);
+                          const found = sortedConsultants.find(ic => ic.id === e.target.value);
                           if (found) setTriSpecialist({ id: found.id, name: found.full_name, phone: found.phone_e164 || '' });
                           else setTriSpecialist({ id: '', name: '', phone: '' });
                         }}
                         style={{ flex: 1, minWidth: 260 }}
                       >
                         <option value="">— Select International Consultant —</option>
-                        {intlConsultants.map(ic => (
-                          <option key={ic.id} value={ic.id}>{ic.full_name} ({ic.phone_e164 || 'No phone'})</option>
-                        ))}
+                        {sortedConsultants.map(ic => {
+                          const isMatch = c.specialty && ic.specialty?.toLowerCase() === c.specialty.toLowerCase();
+                          return (
+                            <option key={ic.id} value={ic.id}>
+                              {isMatch ? '★ ' : ''}{ic.full_name} — {ic.specialty || 'General Medicine'} ({ic.phone_e164 || 'No phone'})
+                            </option>
+                          );
+                        })}
                       </select>
                       <button type="button" className="btn" style={{ fontSize: '0.8rem', padding: '4px 8px' }} onClick={() => setManualSpec(true)}>Enter manually</button>
                     </div>
@@ -262,7 +381,7 @@ function NurseDesk({ c, reload }) {
                       <Field label="Indian Specialist Name"><input placeholder="e.g. Dr. Ramesh Patel" value={triSpecialist.name} onChange={e => setTriSpecialist({ ...triSpecialist, name: e.target.value })} /></Field>
                       <Field label="Indian Specialist WhatsApp"><input placeholder="+91XXXXXXXXXX" value={triSpecialist.phone} onChange={e => setTriSpecialist({ ...triSpecialist, phone: e.target.value })} dir="ltr" /></Field>
                     </div>
-                    {intlConsultants.length > 0 && (
+                    {sortedConsultants.length > 0 && (
                       <button type="button" className="btn" style={{ fontSize: '0.8rem', padding: '4px 8px', marginTop: 6 }} onClick={() => setManualSpec(false)}>← Choose from Consultant List</button>
                     )}
                   </div>
@@ -270,9 +389,14 @@ function NurseDesk({ c, reload }) {
               </div>
             )}
           </div>
+          {!canDispatchToConsultant && (
+            <p style={{ color: '#dc2626', fontSize: '0.82rem', margin: '8px 0 0' }}>
+              ⚠ Complete all 3 compulsory questions & tick the Saudi Privacy Consent box above before sending the Magic Link.
+            </p>
+          )}
           <div className="row" style={{ marginTop: 10 }}>
             <button
-              disabled={!schedAt}
+              disabled={!schedAt || (triSpecialist.name && !canDispatchToConsultant)}
               onClick={() => run(async () => {
                 const res = await api.post(`/cases/${c.id}/schedule`, {
                   scheduled_at: new Date(schedAt).toISOString(),
@@ -281,7 +405,11 @@ function NurseDesk({ c, reload }) {
                   meet_url: meet,
                   is_tripartite: tripartite,
                   specialist_name: triSpecialist.name,
-                  specialist_phone: triSpecialist.phone
+                  specialist_phone: triSpecialist.phone,
+                  deidentified_consent: deidConsent,
+                  questions,
+                  translated_reason_en: transEnReason,
+                  translated_history_en: transEnHistory
                 });
                 if (res.data?.review_url) {
                   const fullUrl = res.data.review_url.startsWith('http')
@@ -319,23 +447,33 @@ function NurseDesk({ c, reload }) {
 
       {c.service_type === 'GMO' && ['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status) && (
         <div style={{ marginTop: 12, border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px', background: '#fdfdfe' }}>
-          <h4 style={{ margin: '0 0 8px' }}>🌍 Stream 1: Written Second Opinion (Select International Consultant)</h4>
+          <h4 style={{ margin: '0 0 8px' }}>🌍 Stream 1: Written Second Opinion (Select International Consultant{c.specialty ? ` · ${c.specialty}` : ''})</h4>
+          {!canDispatchToConsultant && (
+            <p style={{ color: '#dc2626', fontSize: '0.82rem', margin: '0 0 8px' }}>
+              ⚠ Complete all 3 compulsory questions & tick the Saudi Privacy Consent box above to unlock sending the Magic Link.
+            </p>
+          )}
           <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-            {!manualSpec && intlConsultants.length > 0 ? (
+            {!manualSpec && sortedConsultants.length > 0 ? (
               <>
                 <select
                   value={spec.id || ''}
                   onChange={e => {
-                    const found = intlConsultants.find(ic => ic.id === e.target.value);
+                    const found = sortedConsultants.find(ic => ic.id === e.target.value);
                     if (found) setSpec({ ...spec, id: found.id, name: found.full_name, phone: found.phone_e164 || '' });
                     else setSpec({ ...spec, id: '', name: '', phone: '' });
                   }}
                   style={{ minWidth: 260, flex: 1 }}
                 >
                   <option value="">— Select International Consultant —</option>
-                  {intlConsultants.map(ic => (
-                    <option key={ic.id} value={ic.id}>{ic.full_name} ({ic.phone_e164 || 'No phone'})</option>
-                  ))}
+                  {sortedConsultants.map(ic => {
+                    const isMatch = c.specialty && ic.specialty?.toLowerCase() === c.specialty.toLowerCase();
+                    return (
+                      <option key={ic.id} value={ic.id}>
+                        {isMatch ? '★ ' : ''}{ic.full_name} — {ic.specialty || 'General Medicine'} ({ic.phone_e164 || 'No phone'})
+                      </option>
+                    );
+                  })}
                 </select>
                 <button type="button" className="btn" style={{ fontSize: '0.8rem', padding: '4px 8px' }} onClick={() => setManualSpec(true)}>Enter manually</button>
               </>
@@ -343,7 +481,7 @@ function NurseDesk({ c, reload }) {
               <>
                 <input style={{ maxWidth: 200 }} placeholder={t('specialistName')} value={spec.name} onChange={e => setSpec({ ...spec, name: e.target.value })} />
                 <input style={{ maxWidth: 180 }} placeholder="+91XXXXXXXXXX" value={spec.phone} onChange={e => setSpec({ ...spec, phone: e.target.value })} dir="ltr" />
-                {intlConsultants.length > 0 && (
+                {sortedConsultants.length > 0 && (
                   <button type="button" className="btn" style={{ fontSize: '0.8rem', padding: '4px 8px' }} onClick={() => setManualSpec(false)}>← Consultant List</button>
                 )}
               </>
@@ -355,14 +493,18 @@ function NurseDesk({ c, reload }) {
               <option value="follow_up">Follow-Up Review</option>
             </select>
             <button
-              disabled={!spec.name || !spec.phone}
-              style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontWeight: 600 }}
+              disabled={!spec.name || !spec.phone || !canDispatchToConsultant}
+              style={{ background: canDispatchToConsultant ? '#0284c7' : '#94a3b8', borderColor: canDispatchToConsultant ? '#0284c7' : '#94a3b8', color: '#fff', fontWeight: 600 }}
               onClick={() => run(async () => {
                 const res = await api.post(`/cases/${c.id}/reviews/dispatch`, {
                   specialist_id: spec.id || undefined,
                   specialist_name: spec.name,
                   specialist_phone: spec.phone,
-                  request_type: spec.request_type || 'fresh_case'
+                  request_type: spec.request_type || 'fresh_case',
+                  deidentified_consent: deidConsent,
+                  questions,
+                  translated_reason_en: transEnReason,
+                  translated_history_en: transEnHistory
                 });
                 if (res.data?.review_url) {
                   const fullUrl = res.data.review_url.startsWith('http')
@@ -554,10 +696,21 @@ function NurseDesk({ c, reload }) {
           <pre className="report" style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '12px', whiteSpace: 'pre-wrap' }}>
             {reportText || 'No report text available'}
           </pre>
+          <div style={{ marginTop: 12 }}>
+            <Field label="Arabic Translation for Patient (الترجمة العربية للمريض — Optional / Editable)">
+              <textarea
+                dir="rtl"
+                value={finalReportAr}
+                onChange={e => setFinalReportAr(e.target.value)}
+                placeholder="اكتب أو عدّل الترجمة العربية للتقرير الطبي ليظهر للمريض بالعربية..."
+                style={{ minHeight: 90, background: '#fff' }}
+              />
+            </Field>
+          </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
             <button
               style={{ background: '#16a34a', borderColor: '#16a34a', color: '#fff', fontWeight: 700, padding: '10px 22px', fontSize: '1rem', borderRadius: '6px', cursor: 'pointer' }}
-              onClick={() => { if (window.confirm(t('confirmSubmit') || 'Confirm release report to patient?')) run(() => api.post(`/cases/${c.id}/release`)); }}
+              onClick={() => { if (window.confirm(t('confirmSubmit') || 'Confirm release report to patient?')) run(() => api.post(`/cases/${c.id}/release`, { final_report_ar: finalReportAr })); }}
             >
               ✓ Release Final Report to Patient
             </button>

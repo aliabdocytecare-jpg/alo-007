@@ -98,16 +98,26 @@ async function reviewPayload(t) {
   const isCaseReview = !!t.isCaseReview;
   const findings = isCaseReview ? (t.clinical_findings || '') : (legacyReview?.findings || '');
   const rec = isCaseReview ? (t.recommendations || '') : (legacyReview?.recommendation || '');
+  const snap = isCaseReview ? t.case_snapshot : null;
+  const nurseQuestions = snap?.nurse_questions || c.history?.nurse_questions || [];
+  const translatedReasonEn = snap?.translated_reason_en || c.history?.translated_reason_en || c.reason;
+  const translatedHistoryEn = snap?.translated_history_en || c.history?.translated_history_en || null;
+
+  // Only de-identified documents uploaded by Nurse are exposed to International Consultant
+  const deidDocs = (docs || []).filter(d => d.is_deidentified || d.category === 'De-identified Medical Report');
 
   return {
     case_number: c.case_number,
     specialty: c.specialty,
     purpose: c.purpose,
-    reason: c.reason,
+    reason: translatedReasonEn,
+    translated_reason_en: translatedReasonEn,
+    translated_history_en: translatedHistoryEn,
+    nurse_questions: nurseQuestions,
     history: c.history,
     patient_age: ageFrom(p?.dob),
     patient_gender: p?.gender,
-    documents: (docs || []).map(d => ({
+    documents: deidDocs.map(d => ({
       id: d.id,
       file_name: d.file_name,
       file_type: d.file_type,
@@ -283,23 +293,30 @@ export const submitReview = ah(async (req, res) => {
     recommendations,
     follow_up_guidance = '',
     decision_chips = {},
-    voice_note_path,
+    question_answers = [],
     opinion_ar = null
   } = req.body;
 
   const resolvedFindings = (clinical_findings !== undefined ? clinical_findings : findings).trim();
   const resolvedRecs = (recommendations !== undefined ? recommendations : recommendation).trim();
-  const activeVoiceNote = voice_note_path || t.voice_note_path;
 
-  // Validation: either 50 chars each for findings + recommendations, OR active voice note with summary
-  const hasMinText = resolvedFindings.length >= 50 && resolvedRecs.length >= 50;
-  const hasVoiceWithNote = !!activeVoiceNote && resolvedFindings.length >= 20;
-
-  if (!hasMinText && !hasVoiceWithNote) {
-    throw httpError(400, 'Clinical findings and recommendations are required (minimum 50 characters each, or minimum 20 characters with a voice note).');
+  if (resolvedFindings.length < 50 || resolvedRecs.length < 50) {
+    throw httpError(400, 'Clinical findings and recommendations are required (minimum 50 characters each).');
   }
 
+  const { data: caseRow } = await db.from('cases').select('history').eq('id', t.case_id).single();
+  const requiredQuestions = t.case_snapshot?.nurse_questions || caseRow?.history?.nurse_questions || [];
+  const cleanAnswers = Array.isArray(question_answers) ? question_answers.map(a => String(a || '').trim()) : [];
+  if (requiredQuestions.length > 0 && cleanAnswers.filter(Boolean).length < requiredQuestions.length) {
+    throw httpError(400, `Please answer all ${requiredQuestions.length} compulsory clinical questions before submitting.`);
+  }
+
+  const qaBlock = requiredQuestions.length
+    ? '\n\nANSWERS TO NURSE QUESTIONS:\n' + requiredQuestions.map((q, idx) => `Q${idx + 1}: ${q}\nA${idx + 1}: ${cleanAnswers[idx] || '—'}`).join('\n\n')
+    : '';
+
   const now = new Date().toISOString();
+  const enrichedChips = { ...decision_chips, question_answers: cleanAnswers };
 
   if (t.isCaseReview) {
     const { error: revErr } = await db.from('case_reviews').update({
@@ -307,9 +324,8 @@ export const submitReview = ah(async (req, res) => {
       diagnostic_assessment,
       recommendations: resolvedRecs,
       follow_up_guidance,
-      decision_chips,
+      decision_chips: enrichedChips,
       opinion_ar: opinion_ar || t.opinion_ar,
-      voice_note_path: activeVoiceNote,
       status: 'submitted',
       submitted_at: now,
       updated_at: now
@@ -321,7 +337,7 @@ export const submitReview = ah(async (req, res) => {
   // Also maintain international_reviews
   await db.from('international_reviews').upsert({
     case_id: t.case_id,
-    findings: resolvedFindings,
+    findings: resolvedFindings + qaBlock,
     recommendation: resolvedRecs,
     status: 'SUBMITTED',
     submitted_at: now,

@@ -798,9 +798,10 @@ function SpecialtiesTab() {
 }
 
 function ConsultantsTab() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { data, err, reload } = useAsync(() => api.get('/staff/intl-specialists').then(r => r.data?.specialists || []));
-  const [form, setForm] = useState({ full_name: '', phone_e164: '' });
+  const { data: specData } = useAsync(() => api.get('/specialties').then(r => r.data || []));
+  const [form, setForm] = useState({ full_name: '', phone_e164: '', specialty: '' });
   const [state, setState] = useState({ err: '', ok: '' });
   const [busy, setBusy] = useState(false);
 
@@ -811,14 +812,16 @@ function ConsultantsTab() {
       setState({ err: 'Consultant Name and Mobile Number are required.', ok: '' });
       return;
     }
+    const chosenSpec = form.specialty || specData?.[0]?.name_en || 'General Medicine';
     setBusy(true);
     try {
       await api.post('/staff/intl-specialists', {
         full_name: form.full_name.trim(),
-        phone_e164: form.phone_e164.trim()
+        phone_e164: form.phone_e164.trim(),
+        specialty: chosenSpec
       });
-      setState({ ok: `Added ${form.full_name.trim()} to International Consultants.`, err: '' });
-      setForm({ full_name: '', phone_e164: '' });
+      setState({ ok: `Added ${form.full_name.trim()} (${chosenSpec}) to International Consultants.`, err: '' });
+      setForm({ full_name: '', phone_e164: '', specialty: '' });
       reload();
     } catch (e) {
       setState({ err: errMsg(e), ok: '' });
@@ -844,22 +847,24 @@ function ConsultantsTab() {
       <Msg err={err || state.err} ok={state.ok} />
       <h2>International Consultants</h2>
       <p className="muted" style={{ marginTop: -4, marginBottom: 12 }}>
-        Add Indian / International specialists here. Nurses can select them directly when sending a Magic Link for Written Opinions or Online Consultations.
+        Add Indian / International specialists with their specialty here. Nurses will see matching specialty consultants when dispatching a Magic Link.
       </p>
       <table>
         <thead>
           <tr>
             <th>{t('name')}</th>
+            <th>{t('specialty')}</th>
             <th>WhatsApp / Mobile</th>
             <th>{t('actions')}</th>
           </tr>
         </thead>
         <tbody>
           {(data || []).length === 0 ? (
-            <tr><td colSpan={3} className="muted">No international consultants added yet.</td></tr>
+            <tr><td colSpan={4} className="muted">No international consultants added yet.</td></tr>
           ) : (data || []).map(c => (
             <tr key={c.id}>
               <td><strong>{c.full_name}</strong></td>
+              <td>{c.specialty || 'General Medicine'}</td>
               <td dir="ltr">{c.phone_e164 || '—'}</td>
               <td>
                 <button
@@ -893,6 +898,19 @@ function ConsultantsTab() {
               dir="ltr"
               required
             />
+          </Field>
+          <Field label={`${t('specialty')} *`}>
+            <select
+              value={form.specialty || (specData?.[0]?.name_en || '')}
+              onChange={e => setForm({ ...form, specialty: e.target.value })}
+            >
+              {(specData || []).length === 0 && <option value="General Medicine">General Medicine</option>}
+              {(specData || []).map(s => (
+                <option key={s.id} value={s.name_en}>
+                  {lang === 'ar' && s.name_ar ? `${s.name_ar} (${s.name_en})` : s.name_en}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
         <button type="submit" disabled={busy} style={{ marginTop: 10 }}>

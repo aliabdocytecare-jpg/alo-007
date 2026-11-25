@@ -32,10 +32,12 @@ export const uploadDocument = ah(async (req, res) => {
   const { error: upErr } = await db.storage.from('case-documents').upload(path, req.file.buffer, { contentType: ALLOWED[ext] });
   if (upErr) throw httpError(500, `Storage upload failed: ${upErr.message}`);
 
+  const isDeidentified = req.body.is_deidentified === 'true' || req.body.is_deidentified === true || req.body.category === 'De-identified Medical Report';
   const { data: doc, error } = await db.from('documents').insert({
     case_id: c.id, uploader_id: req.session.sub, uploader_role: role,
-    category: req.body.category || 'Other',
-    file_name: req.file.originalname, file_type: ALLOWED[ext], file_size: req.file.size, storage_path: path
+    category: req.body.category || (isDeidentified ? 'De-identified Medical Report' : 'Other'),
+    file_name: req.file.originalname, file_type: ALLOWED[ext], file_size: req.file.size, storage_path: path,
+    is_deidentified: isDeidentified
   }).select().single();
   if (error) throw httpError(500, error.message);
   await audit(req, 'DOCUMENT_UPLOADED', { resourceType: 'case', resourceId: c.id, detail: { file_name: doc.file_name, category: doc.category } });

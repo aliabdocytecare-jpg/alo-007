@@ -26,12 +26,7 @@ export default function Review() {
     urgency: 'routine'
   });
 
-  // Voice Note State
-  const [recording, setRecording] = useState(false);
-  const [audioUrl, setAudioUrl] = useState(null);
-  const [voicePath, setVoicePath] = useState(null);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
+  const [questionAnswers, setQuestionAnswers] = useState(['', '', '']);
 
   const [state, setState] = useState({ err: '', ok: '' });
   const [done, setDone] = useState(false);
@@ -56,60 +51,19 @@ export default function Review() {
         if (d.follow_up_guidance) setFollowUpGuidance(d.follow_up_guidance);
         else if (d.draft?.follow_up_guidance) setFollowUpGuidance(d.draft.follow_up_guidance);
 
-        if (d.decision_chips && Object.keys(d.decision_chips).length) setChips(d.decision_chips);
-        else if (d.draft?.decision_chips && Object.keys(d.draft.decision_chips).length) setChips(d.draft.decision_chips);
-
-        if (d.voice_note_path) setVoicePath(d.voice_note_path);
-        else if (d.draft?.voice_note_path) setVoicePath(d.draft.voice_note_path);
+        if (d.decision_chips && Object.keys(d.decision_chips).length) {
+          setChips(d.decision_chips);
+          if (Array.isArray(d.decision_chips.question_answers)) setQuestionAnswers(d.decision_chips.question_answers);
+        } else if (d.draft?.decision_chips && Object.keys(d.draft.decision_chips).length) {
+          setChips(d.draft.decision_chips);
+          if (Array.isArray(d.draft.decision_chips.question_answers)) setQuestionAnswers(d.draft.decision_chips.question_answers);
+        }
 
         if (d.submitted) setDone(true);
       })
       .catch(e => setError(e.response?.status === 429 ? 'ratelimited' : (e.response?.data?.error || 'invalid')))
       .finally(() => setLoading(false));
   }, [token]);
-
-  // Voice Recording handlers
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const localUrl = URL.createObjectURL(audioBlob);
-        setAudioUrl(localUrl);
-
-        // Upload to server
-        const fd = new FormData();
-        fd.append('audio', audioBlob, 'dictation.webm');
-        try {
-          const { data } = await api.post(`/review/${token}/voice-note`, fd);
-          setVoicePath(data.voice_note_path);
-          setState({ ok: 'Voice note recorded and uploaded successfully', err: '' });
-        } catch (err) {
-          setState({ err: 'Failed to upload voice note', ok: '' });
-        }
-      };
-
-      mediaRecorderRef.current.start();
-      setRecording(true);
-    } catch (err) {
-      setState({ err: 'Microphone permission denied or not supported on this device', ok: '' });
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && recording) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
-      setRecording(false);
-    }
-  };
 
   const saveDraft = async () => {
     setState({ err: '', ok: '' });
@@ -119,8 +73,7 @@ export default function Review() {
         diagnostic_assessment: diagnosticAssessment,
         recommendations,
         follow_up_guidance: followUpGuidance,
-        decision_chips: chips,
-        voice_note_path: voicePath
+        decision_chips: { ...chips, question_answers: questionAnswers }
       });
       setState({ ok: t('draftSaved'), err: '' });
     } catch (e) {
@@ -131,13 +84,23 @@ export default function Review() {
   const submit = async () => {
     setState({ err: '', ok: '' });
     const hasMinText = clinicalFindings.trim().length >= 50 && recommendations.trim().length >= 50;
-    const hasVoiceWithNote = !!voicePath && clinicalFindings.trim().length >= 20;
 
-    if (!hasMinText && !hasVoiceWithNote) {
+    if (!hasMinText) {
       return setState({
-        err: 'Please complete Clinical Findings and Recommendations (min 50 chars each), or attach a Voice Note (min 20 chars).',
+        err: 'Please complete Clinical Findings and Recommendations (minimum 50 characters each).',
         ok: ''
       });
+    }
+
+    const reqCount = data?.nurse_questions?.length || 0;
+    if (reqCount > 0) {
+      const missing = data.nurse_questions.some((_, idx) => !String(questionAnswers[idx] || '').trim());
+      if (missing) {
+        return setState({
+          err: `Please answer all ${reqCount} compulsory clinical questions before submitting.`,
+          ok: ''
+        });
+      }
     }
 
     if (!window.confirm(t('confirmSubmit'))) return;
@@ -150,7 +113,7 @@ export default function Review() {
         recommendations: recommendations.trim(),
         follow_up_guidance: followUpGuidance.trim(),
         decision_chips: chips,
-        voice_note_path: voicePath
+        question_answers: questionAnswers
       });
       setDone(true);
     } catch (e) {
@@ -245,10 +208,15 @@ export default function Review() {
         </section>
       )}
 
-      {/* Case Details */}
+      {/* Case Details (English Brief prepared by ALO Nurse) */}
       <section className="box">
-        <h2>{t('reason')}</h2>
-        <p>{data.reason}</p>
+        <h2>{t('reason')} (English Clinical Brief)</h2>
+        <p>{data.translated_reason_en || data.reason}</p>
+        {data.translated_history_en && (
+          <p style={{ background: '#f8fafc', padding: 8, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+            <strong>Clinical History (EN):</strong> {data.translated_history_en}
+          </p>
+        )}
         {data.request_note && (
           <div style={{ background: '#f5f5f5', border: '1px solid #000', padding: 8, margin: '8px 0' }}>
             <strong>ALO Nurse Dispatch Note:</strong> {data.request_note}
@@ -368,30 +336,29 @@ export default function Review() {
           />
         </Field>
 
-        {/* 3. Mobile Voice Dictation Recorder */}
-        <div style={{ margin: '16px 0', border: '1px solid #000', padding: 12 }}>
-          <strong>🎙 {t('voiceDictation')}</strong>
-          <p className="muted" style={{ margin: '4px 0 10px' }}>
-            Record an audio summary for the patient and ALO Nurse (optional).
-          </p>
-          <div className="row">
-            {!recording ? (
-              <button type="button" onClick={startRecording}>
-                ⏺ {t('startRecord')}
-              </button>
-            ) : (
-              <button type="button" onClick={stopRecording} style={{ background: '#000', color: '#fff' }}>
-                ⏹ {t('stopRecord')} (Recording...)
-              </button>
-            )}
-            {voicePath && <span className="badge">✓ {t('voiceAttached')}</span>}
+        {/* Compulsory Clinical Questions from ALO Nurse */}
+        {Array.isArray(data.nurse_questions) && data.nurse_questions.length > 0 && (
+          <div style={{ margin: '16px 0', border: '2px solid #0284c7', borderRadius: 8, padding: 14, background: '#f0f9ff' }}>
+            <h3 style={{ margin: '0 0 8px', color: '#0369a1' }}>❓ Compulsory Clinical Questions (Required)</h3>
+            <p className="muted" style={{ margin: '0 0 12px', fontSize: '0.88rem' }}>
+              Please answer all {data.nurse_questions.length} questions below to complete your medical opinion.
+            </p>
+            {data.nurse_questions.map((qText, idx) => (
+              <Field key={idx} label={`Question ${idx + 1}: ${qText} *`}>
+                <textarea
+                  value={questionAnswers[idx] || ''}
+                  onChange={e => {
+                    const next = [...questionAnswers];
+                    next[idx] = e.target.value;
+                    setQuestionAnswers(next);
+                  }}
+                  placeholder={`Enter your clinical answer to Question ${idx + 1}...`}
+                  style={{ minHeight: 65 }}
+                />
+              </Field>
+            ))}
           </div>
-          {audioUrl && (
-            <div style={{ marginTop: 10 }}>
-              <audio controls src={audioUrl} style={{ width: '100%', height: 40 }} />
-            </div>
-          )}
-        </div>
+        )}
 
         {/* Actions */}
         <div className="row" style={{ marginTop: 20 }}>

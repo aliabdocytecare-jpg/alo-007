@@ -303,11 +303,28 @@ export const updateReportsRequestItem = ah(async (req, res) => {
 
 export const dispatchCaseReview = ah(async (req, res) => {
   const c = req.case;
-  const { specialist_name, specialist_phone, request_type, request_note, specialist_id } = req.body;
+  const {
+    specialist_name,
+    specialist_phone,
+    request_type,
+    request_note,
+    specialist_id,
+    deidentified_consent,
+    questions,
+    translated_reason_en,
+    translated_history_en
+  } = req.body;
 
   if (!specialist_name?.trim()) throw httpError(400, 'Specialist name is required');
   if (!specialist_phone || !/^\+[1-9]\d{7,14}$/.test(specialist_phone)) {
     throw httpError(400, 'Specialist phone in international E.164 format is required');
+  }
+  if (!deidentified_consent) {
+    throw httpError(400, 'Saudi Privacy Law compliance: You must confirm that all patient-identifying information has been hidden/redacted.');
+  }
+  const cleanQuestions = Array.isArray(questions) ? questions.map(q => String(q || '').trim()).filter(Boolean) : [];
+  if (cleanQuestions.length < 3) {
+    throw httpError(400, 'All 3 compulsory clinical questions for the International Consultant are required.');
   }
 
   const validTypes = ['fresh_case', 'additional_reports', 'second_review', 'meeting_request', 'post_meeting_review', 'follow_up'];
@@ -323,24 +340,37 @@ export const dispatchCaseReview = ah(async (req, res) => {
 
   const nextRound = (existingReviews?.[0]?.round_number || 0) + 1;
 
-  // Snapshot current case context: documents & medical history at dispatch time
-  const { data: docs } = await db
+  // Snapshot current case context: ONLY de-identified documents go to International Consultant
+  const { data: allDocs } = await db
     .from('documents')
-    .select('id, file_name, file_type, category, created_at')
+    .select('id, file_name, file_type, category, is_deidentified, created_at')
     .eq('case_id', c.id)
     .eq('is_deleted', false);
+  const docs = (allDocs || []).filter(d => d.is_deidentified || d.category === 'De-identified Medical Report');
 
   const { data: patient } = await db.from('patients').select('dob, gender').eq('id', c.patient_id).single();
+
+  const updatedHistory = {
+    ...(typeof c.history === 'object' && c.history ? c.history : {}),
+    ...(translated_reason_en?.trim() ? { translated_reason_en: translated_reason_en.trim() } : {}),
+    ...(translated_history_en?.trim() ? { translated_history_en: translated_history_en.trim() } : {}),
+    nurse_questions: cleanQuestions,
+    deidentified_consent: true
+  };
+  await db.from('cases').update({ history: updatedHistory, updated_at: new Date().toISOString() }).eq('id', c.id);
 
   const caseSnapshot = {
     case_number: c.case_number,
     specialty: c.specialty,
     purpose: c.purpose,
-    reason: c.reason,
-    history: c.history,
+    reason: translated_reason_en?.trim() || c.reason,
+    history: updatedHistory,
+    translated_reason_en: translated_reason_en?.trim() || c.reason,
+    translated_history_en: translated_history_en?.trim() || null,
+    nurse_questions: cleanQuestions,
     patient_age: patient?.dob ? Math.floor((new Date() - new Date(patient.dob)) / 31557600000) : null,
     patient_gender: patient?.gender || null,
-    documents_at_dispatch: docs || [],
+    documents_at_dispatch: docs,
     dispatched_at: new Date().toISOString()
   };
 
