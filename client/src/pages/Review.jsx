@@ -251,7 +251,7 @@ export default function Review() {
         <p>{data.reason}</p>
         {data.request_note && (
           <div style={{ background: '#f5f5f5', border: '1px solid #000', padding: 8, margin: '8px 0' }}>
-            <strong>Coordinator Dispatch Note:</strong> {data.request_note}
+            <strong>ALO Nurse Dispatch Note:</strong> {data.request_note}
           </div>
         )}
         {data.history && Object.keys(data.history).length > 0 && (
@@ -372,7 +372,7 @@ export default function Review() {
         <div style={{ margin: '16px 0', border: '1px solid #000', padding: 12 }}>
           <strong>🎙 {t('voiceDictation')}</strong>
           <p className="muted" style={{ margin: '4px 0 10px' }}>
-            Record an audio summary for the patient and coordinator (optional).
+            Record an audio summary for the patient and ALO Nurse (optional).
           </p>
           <div className="row">
             {!recording ? (

@@ -135,7 +135,7 @@ function StaffTab() {
         <Field label={t('fullName')}><input value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} placeholder="e.g. Dr. Sarah Jenkins" /></Field>
         <Field label={t('role')}>
           <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-            {['nurse', 'coordinator', 'doctor', 'admin'].map(r => <option key={r} value={r}>{t(r)}</option>)}
+            {['nurse', 'admin'].map(r => <option key={r} value={r}>{t(r)}</option>)}
           </select>
         </Field>
         <Field label={`${t('email')} *`}><input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} dir="ltr" placeholder="staff@hospital.com" required /></Field>
@@ -797,11 +797,118 @@ function SpecialtiesTab() {
   );
 }
 
+function ConsultantsTab() {
+  const { t } = useI18n();
+  const { data, err, reload } = useAsync(() => api.get('/staff/intl-specialists').then(r => r.data?.specialists || []));
+  const [form, setForm] = useState({ full_name: '', phone_e164: '' });
+  const [state, setState] = useState({ err: '', ok: '' });
+  const [busy, setBusy] = useState(false);
+
+  const addConsultant = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    setState({ err: '', ok: '' });
+    if (!form.full_name.trim() || !form.phone_e164.trim()) {
+      setState({ err: 'Consultant Name and Mobile Number are required.', ok: '' });
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post('/staff/intl-specialists', {
+        full_name: form.full_name.trim(),
+        phone_e164: form.phone_e164.trim()
+      });
+      setState({ ok: `Added ${form.full_name.trim()} to International Consultants.`, err: '' });
+      setForm({ full_name: '', phone_e164: '' });
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeConsultant = async (c) => {
+    if (!window.confirm(`Remove "${c.full_name}" (${c.phone_e164 || ''}) from International Consultants?`)) return;
+    setState({ err: '', ok: '' });
+    try {
+      await api.delete(`/staff/intl-specialists/${c.id}`);
+      setState({ ok: `${c.full_name} removed.`, err: '' });
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+    }
+  };
+
+  return (
+    <div>
+      <Msg err={err || state.err} ok={state.ok} />
+      <h2>International Consultants</h2>
+      <p className="muted" style={{ marginTop: -4, marginBottom: 12 }}>
+        Add Indian / International specialists here. Nurses can select them directly when sending a Magic Link for Written Opinions or Online Consultations.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>{t('name')}</th>
+            <th>WhatsApp / Mobile</th>
+            <th>{t('actions')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(data || []).length === 0 ? (
+            <tr><td colSpan={3} className="muted">No international consultants added yet.</td></tr>
+          ) : (data || []).map(c => (
+            <tr key={c.id}>
+              <td><strong>{c.full_name}</strong></td>
+              <td dir="ltr">{c.phone_e164 || '—'}</td>
+              <td>
+                <button
+                  onClick={() => removeConsultant(c)}
+                  style={{ padding: '4px 10px', fontSize: '0.85rem', color: '#dc2626', borderColor: '#fca5a5', backgroundColor: '#fef2f2' }}
+                >
+                  {t('deleteStaff') || 'Delete'}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h3 style={{ marginTop: 20 }}>Add International Consultant</h3>
+      <form onSubmit={addConsultant}>
+        <div className="grid2">
+          <Field label="Consultant Name *">
+            <input
+              value={form.full_name}
+              onChange={e => setForm({ ...form, full_name: e.target.value })}
+              placeholder="e.g. Dr. Ramesh Patel"
+              required
+            />
+          </Field>
+          <Field label="Mobile / WhatsApp Number *">
+            <input
+              value={form.phone_e164}
+              onChange={e => setForm({ ...form, phone_e164: e.target.value })}
+              placeholder="+919876543210"
+              dir="ltr"
+              required
+            />
+          </Field>
+        </div>
+        <button type="submit" disabled={busy} style={{ marginTop: 10 }}>
+          {busy ? '...' : '+ Add International Consultant'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function Admin() {
   const { t } = useI18n();
   const [tab, setTab] = useState('staff');
   const tabs = [
     ['staff', 'staffMgmt'],
+    ['consultants', 'intlConsultants'],
     ['hospitals', 'hospitalsAdmin'],
     ['specialties', 'specialtiesAdmin'],
     ['formulary', 'formularyAdmin'],
@@ -817,6 +924,7 @@ export default function Admin() {
         {tabs.map(([key, label]) => <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{t(label)}</button>)}
       </div>
       {tab === 'staff' && <StaffTab />}
+      {tab === 'consultants' && <ConsultantsTab />}
       {tab === 'hospitals' && <HospitalsTab />}
       {tab === 'specialties' && <SpecialtiesTab />}
       {tab === 'formulary' && <FormularyTab />}

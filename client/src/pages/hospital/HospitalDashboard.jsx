@@ -204,7 +204,7 @@ export default function HospitalDashboard() {
     setErr(''); setOk('');
     try {
       await api.post(`/hospital/cases/${activeCase.id}/intl-opinion`, intlOpinionForm);
-      setOk('Global Second Opinion requested! Routed to ALO platform coordinators.');
+      setOk('Global Second Opinion requested! Routed to ALO Nurse desk.');
       setShowIntlModal(false);
       setIntlOpinionForm({ specialty: '', clinical_question: '', consented_by_name: '', patient_consent: false, urgency: 'routine' });
     } catch (e) { setErr(errMsg(e)); }
@@ -508,7 +508,7 @@ export default function HospitalDashboard() {
             <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
               <div className="box" style={{ background: '#fff', maxWidth: 600, width: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
                 <h2>Request International Second Opinion</h2>
-                <p className="muted">Route this case to ALO platform coordinators for review by an accredited global specialist.</p>
+                <p className="muted">Route this case to the ALO Nurse desk for review by an accredited global specialist.</p>
                 <form onSubmit={requestBridge2Opinion}>
                   <Field label="Requested Global Specialty">
                     <input required value={intlOpinionForm.specialty} onChange={e => setIntlOpinionForm({ ...intlOpinionForm, specialty: e.target.value })} placeholder="e.g. Cardiothoracic Surgery" />

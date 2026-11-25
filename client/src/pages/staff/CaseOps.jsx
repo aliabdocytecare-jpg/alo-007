@@ -37,8 +37,13 @@ function NurseDesk({ c, reload }) {
   const [escNote, setEscNote] = useState('');
   const [v, setV] = useState({ blood_pressure: '', heart_rate: '', temperature: '', weight: '', height: '', spo2: '', nursing_notes: '' });
   const [generatedLink, setGeneratedLink] = useState('');
+  const [intlConsultants, setIntlConsultants] = useState([]);
+  const [manualSpec, setManualSpec] = useState(false);
 
-  useEffect(() => { api.get('/staff/directory').then(r => setDirectory(r.data)).catch(() => {}); }, []);
+  useEffect(() => {
+    api.get('/staff/directory').then(r => setDirectory(r.data)).catch(() => {});
+    api.get('/staff/intl-specialists').then(r => setIntlConsultants(r.data?.specialists || [])).catch(() => {});
+  }, []);
 
   const latestLink = c.magic_links?.[0];
   const linkState = latestLink
@@ -234,9 +239,38 @@ function NurseDesk({ c, reload }) {
               Enable Live Tripartite Session (Saudi Hospital Doctor + Indian Specialist)
             </label>
             {tripartite && (
-              <div className="grid2" style={{ marginTop: 8 }}>
-                <Field label="Indian Specialist Name"><input placeholder="e.g. Dr. Ramesh Patel" value={triSpecialist.name} onChange={e => setTriSpecialist({ ...triSpecialist, name: e.target.value })} /></Field>
-                <Field label="Indian Specialist WhatsApp"><input placeholder="+91XXXXXXXXXX" value={triSpecialist.phone} onChange={e => setTriSpecialist({ ...triSpecialist, phone: e.target.value })} dir="ltr" /></Field>
+              <div style={{ marginTop: 8 }}>
+                {!manualSpec && intlConsultants.length > 0 ? (
+                  <Field label="Select International Consultant">
+                    <div className="row" style={{ gap: 8 }}>
+                      <select
+                        value={triSpecialist.id || ''}
+                        onChange={e => {
+                          const found = intlConsultants.find(ic => ic.id === e.target.value);
+                          if (found) setTriSpecialist({ id: found.id, name: found.full_name, phone: found.phone_e164 || '' });
+                          else setTriSpecialist({ id: '', name: '', phone: '' });
+                        }}
+                        style={{ flex: 1, minWidth: 260 }}
+                      >
+                        <option value="">— Select International Consultant —</option>
+                        {intlConsultants.map(ic => (
+                          <option key={ic.id} value={ic.id}>{ic.full_name} ({ic.phone_e164 || 'No phone'})</option>
+                        ))}
+                      </select>
+                      <button type="button" className="btn" style={{ fontSize: '0.8rem', padding: '4px 8px' }} onClick={() => setManualSpec(true)}>Enter manually</button>
+                    </div>
+                  </Field>
+                ) : (
+                  <div>
+                    <div className="grid2">
+                      <Field label="Indian Specialist Name"><input placeholder="e.g. Dr. Ramesh Patel" value={triSpecialist.name} onChange={e => setTriSpecialist({ ...triSpecialist, name: e.target.value })} /></Field>
+                      <Field label="Indian Specialist WhatsApp"><input placeholder="+91XXXXXXXXXX" value={triSpecialist.phone} onChange={e => setTriSpecialist({ ...triSpecialist, phone: e.target.value })} dir="ltr" /></Field>
+                    </div>
+                    {intlConsultants.length > 0 && (
+                      <button type="button" className="btn" style={{ fontSize: '0.8rem', padding: '4px 8px', marginTop: 6 }} onClick={() => setManualSpec(false)}>← Choose from Consultant List</button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -259,10 +293,10 @@ function NurseDesk({ c, reload }) {
                     : window.location.origin + res.data.review_url;
                   setGeneratedLink(fullUrl);
                 }
-              }, 'Consultation scheduled & video room dispatched')}
+              }, 'Consultation scheduled & Magic Link dispatched')}
               style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontWeight: 600 }}
             >
-              Confirm Consultation Slot
+              {tripartite ? '🔗 Confirm Slot & Send Magic Link' : 'Confirm Consultation Slot'}
             </button>
           </div>
         </div>
@@ -289,10 +323,35 @@ function NurseDesk({ c, reload }) {
 
       {c.service_type === 'GMO' && ['READY_FOR_ASSIGNMENT', 'SPECIALIST_ASSIGNED'].includes(c.status) && (
         <div style={{ marginTop: 12, border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px', background: '#fdfdfe' }}>
-          <h4 style={{ margin: '0 0 8px' }}>🌍 Stream 1: Written Second Opinion (Indian Specialist Dispatch)</h4>
-          <div className="row">
-            <input style={{ maxWidth: 200 }} placeholder={t('specialistName')} value={spec.name} onChange={e => setSpec({ ...spec, name: e.target.value })} />
-            <input style={{ maxWidth: 180 }} placeholder="+91XXXXXXXXXX" value={spec.phone} onChange={e => setSpec({ ...spec, phone: e.target.value })} dir="ltr" />
+          <h4 style={{ margin: '0 0 8px' }}>🌍 Stream 1: Written Second Opinion (Select International Consultant)</h4>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+            {!manualSpec && intlConsultants.length > 0 ? (
+              <>
+                <select
+                  value={spec.id || ''}
+                  onChange={e => {
+                    const found = intlConsultants.find(ic => ic.id === e.target.value);
+                    if (found) setSpec({ ...spec, id: found.id, name: found.full_name, phone: found.phone_e164 || '' });
+                    else setSpec({ ...spec, id: '', name: '', phone: '' });
+                  }}
+                  style={{ minWidth: 260, flex: 1 }}
+                >
+                  <option value="">— Select International Consultant —</option>
+                  {intlConsultants.map(ic => (
+                    <option key={ic.id} value={ic.id}>{ic.full_name} ({ic.phone_e164 || 'No phone'})</option>
+                  ))}
+                </select>
+                <button type="button" className="btn" style={{ fontSize: '0.8rem', padding: '4px 8px' }} onClick={() => setManualSpec(true)}>Enter manually</button>
+              </>
+            ) : (
+              <>
+                <input style={{ maxWidth: 200 }} placeholder={t('specialistName')} value={spec.name} onChange={e => setSpec({ ...spec, name: e.target.value })} />
+                <input style={{ maxWidth: 180 }} placeholder="+91XXXXXXXXXX" value={spec.phone} onChange={e => setSpec({ ...spec, phone: e.target.value })} dir="ltr" />
+                {intlConsultants.length > 0 && (
+                  <button type="button" className="btn" style={{ fontSize: '0.8rem', padding: '4px 8px' }} onClick={() => setManualSpec(false)}>← Consultant List</button>
+                )}
+              </>
+            )}
             <select value={spec.request_type || 'fresh_case'} onChange={e => setSpec({ ...spec, request_type: e.target.value })} style={{ maxWidth: 160 }}>
               <option value="fresh_case">Fresh Case</option>
               <option value="additional_reports">Additional Reports</option>
@@ -301,8 +360,10 @@ function NurseDesk({ c, reload }) {
             </select>
             <button
               disabled={!spec.name || !spec.phone}
+              style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontWeight: 600 }}
               onClick={() => run(async () => {
                 const res = await api.post(`/cases/${c.id}/reviews/dispatch`, {
+                  specialist_id: spec.id || undefined,
                   specialist_name: spec.name,
                   specialist_phone: spec.phone,
                   request_type: spec.request_type || 'fresh_case'
@@ -313,9 +374,9 @@ function NurseDesk({ c, reload }) {
                     : window.location.origin + res.data.review_url;
                   setGeneratedLink(fullUrl);
                 }
-              }, 'Specialist review dispatched via WhatsApp')}
+              }, 'Magic Link generated & ready for specialist')}
             >
-              Dispatch Review
+              🔗 Send Magic Link
             </button>
           </div>
         </div>
@@ -715,7 +776,7 @@ function DoctorPanel({ c, reload }) {
             style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontWeight: 600, padding: '8px 16px' }}
             onClick={() => {
               if (!window.confirm(t('confirmSubmit'))) return;
-              run(() => api.post(`/cases/${c.id}/report`, { report, follow_up_recommended: fu.on, follow_up_timeframe: fu.timeframe, follow_up_type: fu.type, follow_up_reason: fu.reason }), 'Medical opinion submitted to Coordinator for final release');
+              run(() => api.post(`/cases/${c.id}/report`, { report, follow_up_recommended: fu.on, follow_up_timeframe: fu.timeframe, follow_up_type: fu.type, follow_up_reason: fu.reason }), 'Medical opinion submitted to ALO Nurse for final release');
             }}
           >
             ✓ {t('finalizeAndSubmit')}

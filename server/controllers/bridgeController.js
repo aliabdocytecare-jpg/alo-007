@@ -584,19 +584,25 @@ export const listSpecialistDirectory = ah(async (req, res) => {
 });
 
 export const createSpecialistDirectoryItem = ah(async (req, res) => {
-  const { full_name, specialty, sub_specialty, institution, country, phone_e164, email, languages, notes } = req.body;
+  const { full_name, specialty, sub_specialty, institution, country, phone_e164, phone, email, languages, notes } = req.body;
+  const rawPhone = phone_e164 || phone;
 
-  if (!full_name || !specialty || !country) {
-    throw httpError(400, 'full_name, specialty, and country are required');
+  if (!full_name?.trim() || !rawPhone?.trim()) {
+    throw httpError(400, 'Consultant name and mobile number are required');
+  }
+
+  let normalizedPhone = String(rawPhone).trim().replace(/[\s()-]/g, '');
+  if (!normalizedPhone.startsWith('+')) {
+    normalizedPhone = normalizedPhone.length === 10 ? `+91${normalizedPhone}` : `+${normalizedPhone}`;
   }
 
   const payload = {
     full_name: String(full_name).trim(),
-    specialty: String(specialty).trim(),
+    specialty: specialty?.trim() || 'General Medicine',
     sub_specialty: sub_specialty ? String(sub_specialty).trim() : null,
     institution: institution ? String(institution).trim() : null,
-    country: String(country).trim(),
-    phone_e164: phone_e164 ? String(phone_e164).trim() : null,
+    country: country?.trim() || 'India',
+    phone_e164: normalizedPhone,
     email: email ? String(email).trim() : null,
     languages: Array.isArray(languages) ? languages : ['en'],
     notes: notes || null,
@@ -612,6 +618,17 @@ export const createSpecialistDirectoryItem = ah(async (req, res) => {
   if (error) throw httpError(500, error.message);
 
   res.status(201).json({ ok: true, specialist: item });
+});
+
+export const deleteSpecialistDirectoryItem = ah(async (req, res) => {
+  const { id } = req.params;
+  const { error } = await db
+    .from('international_specialists')
+    .update({ is_active: false })
+    .eq('id', id);
+
+  if (error) throw httpError(500, error.message);
+  res.json({ ok: true });
 });
 
 /**

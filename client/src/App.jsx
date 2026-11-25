@@ -54,7 +54,7 @@ function Layout({ children }) {
           {session?.kind === 'staff' && !hospId && session.role !== 'admin' && (
             <>
               <Link to="/staff">{t('dashboard')}</Link>
-              {session.role === 'coordinator' && <Link to="/staff/intl-opinions">{t('intlQueue')}</Link>}
+              {['nurse', 'coordinator'].includes(session.role) && <Link to="/staff/intl-opinions">{t('intlQueue')}</Link>}
             </>
           )}
           {session?.role === 'admin' && (
@@ -124,7 +124,7 @@ export default function App() {
         <Route path="/notifications" element={<Guard><Notifications /></Guard>} />
         <Route path="/staff" element={<Guard roles={['nurse', 'coordinator', 'doctor', 'admin']}><StaffDashboard /></Guard>} />
         <Route path="/staff/cases/:id" element={<Guard roles={['nurse', 'coordinator', 'doctor', 'admin']}><CaseOps /></Guard>} />
-        <Route path="/staff/intl-opinions" element={<Guard roles={['coordinator', 'admin']}><IntlOpinionsQueue /></Guard>} />
+        <Route path="/staff/intl-opinions" element={<Guard roles={['nurse', 'coordinator', 'admin']}><IntlOpinionsQueue /></Guard>} />
         <Route path="/admin" element={<Guard roles={['admin']}><Admin /></Guard>} />
 
         {/* Hospital Clinic Portal */}

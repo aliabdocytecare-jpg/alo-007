@@ -46,10 +46,10 @@ function CaseTable({ rows }) {
                 borderRadius: '12px',
                 fontSize: '0.76rem',
                 fontWeight: 600,
-                background: c.workflow?.custodian === 'COORDINATOR' ? '#f3e8ff' : c.workflow?.custodian === 'NURSE' ? '#fef3c7' : c.workflow?.custodian === 'DOCTOR' ? '#e0f2fe' : '#ecfdf5',
-                color: c.workflow?.custodian === 'COORDINATOR' ? '#7e22ce' : c.workflow?.custodian === 'NURSE' ? '#b45309' : c.workflow?.custodian === 'DOCTOR' ? '#0369a1' : '#047857'
+                background: ['COORDINATOR', 'NURSE', 'ALO_NURSE'].includes(c.workflow?.custodian) ? '#ecfdf5' : c.workflow?.custodian === 'DOCTOR' ? '#e0f2fe' : '#fef3c7',
+                color: ['COORDINATOR', 'NURSE', 'ALO_NURSE'].includes(c.workflow?.custodian) ? '#047857' : c.workflow?.custodian === 'DOCTOR' ? '#0369a1' : '#b45309'
               }}>
-                {c.workflow?.custodian || 'COORDINATOR'}
+                {!c.workflow?.custodian || ['COORDINATOR', 'NURSE', 'ALO_NURSE'].includes(c.workflow?.custodian) ? 'ALO NURSE' : c.workflow.custodian}
               </span>
             </td>
             <td>
@@ -87,7 +87,7 @@ export default function StaffDashboard() {
   const by = fn => rows.filter(fn);
   const overdue = by(isOverdue);
 
-  const needsAction = by(c => (c.workflow?.custodian === 'COORDINATOR' || c.workflow?.custodian === 'NURSE' || ['SUBMITTED', 'INITIAL_REVIEW', 'READY_FOR_ASSIGNMENT', 'REPORT_SUBMITTED'].includes(c.status)) && !['COMPLETED', 'CANCELLED'].includes(c.status));
+  const needsAction = by(c => (['COORDINATOR', 'NURSE', 'ALO_NURSE'].includes(c.workflow?.custodian) || ['SUBMITTED', 'INITIAL_REVIEW', 'READY_FOR_ASSIGNMENT', 'REPORT_SUBMITTED'].includes(c.status)) && !['COMPLETED', 'CANCELLED'].includes(c.status));
   const withDoctor = by(c => (c.workflow?.custodian === 'DOCTOR' || ['SPECIALIST_ASSIGNED', 'IN_PROGRESS', 'UNDER_MEDICAL_REVIEW'].includes(c.status)) && c.status !== 'REPORT_SUBMITTED');
   const withPatient = by(c => c.workflow?.custodian === 'PATIENT' && c.status === 'ADDITIONAL_INFO_REQUIRED');
 

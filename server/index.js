@@ -283,6 +283,7 @@ api.get('/staff/intl-opinions', requireAuth, requireRole('nurse', 'coordinator',
 api.post('/staff/intl-opinions/:id/dispatch', requireRole('nurse', 'coordinator', 'admin'), requireALOStaff, bridge.dispatchIntlOpinion);
 api.get('/staff/intl-specialists', requireAuth, requireRole('nurse', 'coordinator', 'admin'), requireALOStaff, bridge.listSpecialistDirectory);
 api.post('/staff/intl-specialists', requireRole('nurse', 'coordinator', 'admin'), requireALOStaff, bridge.createSpecialistDirectoryItem);
+api.delete('/staff/intl-specialists/:id', requireRole('admin'), requireALOStaff, bridge.deleteSpecialistDirectoryItem);
 
 api.get('/review/intl/:token', reviewLimiter, bridge.openIntlReview);
 api.get('/review/intl/:token/documents/:docId', reviewLimiter, bridge.reviewIntlDocument);

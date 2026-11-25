@@ -77,7 +77,7 @@ export default function ReportsUpload() {
         <h1>{t('reportsUpload')}</h1>
         <p className="muted">{t('caseId')}: <strong>{caseNumber}</strong></p>
         <p>{t('reportsUploadHelp')}</p>
-        {data?.notes && <p className="muted"><strong>Coordinator Note:</strong> {data.notes}</p>}
+        {data?.notes && <p className="muted"><strong>ALO Nurse Note:</strong> {data.notes}</p>}
 
         <Msg err={err} ok={ok} />
 

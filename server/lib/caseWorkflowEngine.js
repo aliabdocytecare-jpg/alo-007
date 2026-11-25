@@ -9,22 +9,22 @@ export function computeCaseWorkflow(c, lang = 'en') {
   let stageLabelEn = 'Case Received';
   let stageLabelAr = 'استلام الحالة';
 
-  // Custodian: COORDINATOR | NURSE | DOCTOR | PATIENT
-  let custodian = 'COORDINATOR';
-  let nextActionEn = 'Review documents & assign triage nurse';
-  let nextActionAr = 'مراجعة المستندات وتعيين ممرض الفحص';
+  // Custodian: ALO_NURSE | DOCTOR | PATIENT
+  let custodian = 'ALO_NURSE';
+  let nextActionEn = 'Nurse: Review documents & verify payment';
+  let nextActionAr = 'الممرض: مراجعة المستندات وتأكيد الدفع';
 
   if (c.status === 'SUBMITTED' || c.status === 'INITIAL_REVIEW') {
     stage = 1;
     stageLabelEn = 'Case Received';
     stageLabelAr = 'استلام الحالة';
-    custodian = 'COORDINATOR';
+    custodian = 'ALO_NURSE';
     if (!c.payment_confirmed) {
       nextActionEn = 'Confirm payment & review submitted documents';
       nextActionAr = 'تأكيد الدفع ومراجعة المستندات المقدمة';
     } else {
-      nextActionEn = 'Assign triage nurse to verify documents & vitals';
-      nextActionAr = 'تعيين ممرض للتحقق من المستندات والعلامات الحيوية';
+      nextActionEn = 'Complete nurse check & select consultant';
+      nextActionAr = 'إكمال فحص الممرض واختيار المختص';
     }
   } else if (c.status === 'ADDITIONAL_INFO_REQUIRED') {
     stage = 2;
@@ -36,18 +36,18 @@ export function computeCaseWorkflow(c, lang = 'en') {
   } else if (c.status === 'READY_FOR_ASSIGNMENT') {
     if (c.intake_completed) {
       stage = 2;
-      stageLabelEn = 'Triage Complete';
-      stageLabelAr = 'اكتمل الفحص المبدئي';
-      custodian = 'COORDINATOR';
-      nextActionEn = 'Nurse triage complete 👉 Assign Doctor for medical review';
-      nextActionAr = 'اكتمل فحص التمريض 👉 إسناد للطبيب للمراجعة الطبية';
+      stageLabelEn = 'Nurse Check Complete';
+      stageLabelAr = 'اكتمل فحص الممرض';
+      custodian = 'ALO_NURSE';
+      nextActionEn = 'Select consultant & send Magic Link 👉';
+      nextActionAr = 'اختر المختص وأرسل الرابط 👉';
     } else {
       stage = 1;
-      stageLabelEn = 'Ready for Assignment';
-      stageLabelAr = 'جاهز للإسناد';
-      custodian = 'COORDINATOR';
-      nextActionEn = 'Assign triage nurse for document check';
-      nextActionAr = 'إسناد لممرض لفحص المستندات';
+      stageLabelEn = 'Ready for Nurse Check';
+      stageLabelAr = 'جاهز لفحص الممرض';
+      custodian = 'ALO_NURSE';
+      nextActionEn = 'Nurse: Verify documents & vitals';
+      nextActionAr = 'الممرض: التحقق من المستندات والعلامات الحيوية';
     }
   } else if (c.status === 'SPECIALIST_ASSIGNED') {
     const hasNurse = c.owner_role === 'nurse' || (c.assignments || []).some(a => a.role === 'nurse');
@@ -55,40 +55,40 @@ export function computeCaseWorkflow(c, lang = 'en') {
 
     if (hasNurse && !c.intake_completed) {
       stage = 2;
-      stageLabelEn = 'Nurse Triage in Progress';
-      stageLabelAr = 'فرز التمريض جاري';
-      custodian = 'NURSE';
-      nextActionEn = 'Nurse reviewing reports & recording triage vitals';
+      stageLabelEn = 'Nurse Review';
+      stageLabelAr = 'مراجعة الممرض';
+      custodian = 'ALO_NURSE';
+      nextActionEn = 'Nurse reviewing reports & recording vitals';
       nextActionAr = 'الممرض يراجع التقارير ويسجل العلامات الحيوية';
     } else if (hasDoctor || c.intake_completed) {
       stage = 3;
-      stageLabelEn = 'Doctor Medical Review';
-      stageLabelAr = 'المراجعة الطبية للطبيب';
+      stageLabelEn = 'Consultant Review';
+      stageLabelAr = 'مراجعة المختص';
       custodian = 'DOCTOR';
-      nextActionEn = 'Doctor reviewing medical history & drafting opinion';
-      nextActionAr = 'الطبيب يدرس التاريخ الطبي ويعد الرأي الطبي';
+      nextActionEn = 'Consultant reviewing case & preparing opinion';
+      nextActionAr = 'المختص يدرس الحالة ويعد الرأي الطبي';
     } else {
       stage = 2;
       stageLabelEn = 'Specialist Assigned';
       stageLabelAr = 'تم تعيين المختص';
-      custodian = 'COORDINATOR';
-      nextActionEn = 'Coordinate clinical review';
-      nextActionAr = 'تنسيق المراجعة الطبية';
+      custodian = 'ALO_NURSE';
+      nextActionEn = 'Nurse managing consultant review';
+      nextActionAr = 'الممرض يتابع المراجعة الطبية';
     }
   } else if (c.status === 'UNDER_MEDICAL_REVIEW' || c.status === 'IN_PROGRESS' || c.status === 'APPOINTMENT_SCHEDULED') {
     stage = 3;
     stageLabelEn = 'Under Medical Review';
     stageLabelAr = 'قيد المراجعة الطبية';
     custodian = 'DOCTOR';
-    nextActionEn = 'Doctor conducting review / writing clinical report';
-    nextActionAr = 'الطبيب يجري المراجعة ويكتب التقرير السريري';
+    nextActionEn = 'Consultant conducting review / writing report';
+    nextActionAr = 'المختص يجري المراجعة ويكتب التقرير';
   } else if (c.status === 'REPORT_SUBMITTED') {
     stage = 4;
     stageLabelEn = 'Opinion Prepared';
     stageLabelAr = 'تم إعداد الرأي الطبي';
     custodian = 'ALO_NURSE';
-    nextActionEn = 'Doctor submitted opinion 👉 Review & release final report to patient';
-    nextActionAr = 'الطبيب سلم الرأي الطبي 👉 مراجعة واعتماد التقرير للمريض';
+    nextActionEn = 'Consultant submitted opinion 👉 Nurse to release report to patient';
+    nextActionAr = 'المختص سلم الرأي الطبي 👉 الممرض يعتمد ويرسل التقرير للمريض';
   } else if (c.status === 'COMPLETED') {
     stage = 5;
     stageLabelEn = 'Delivered & Complete';
@@ -107,7 +107,7 @@ export function computeCaseWorkflow(c, lang = 'en') {
     stage = 0;
     stageLabelEn = 'Cancelled';
     stageLabelAr = 'ملغاة';
-    custodian = 'COORDINATOR';
+    custodian = 'ALO_NURSE';
     nextActionEn = 'Case cancelled';
     nextActionAr = 'تم إلغاء الحالة';
   }
