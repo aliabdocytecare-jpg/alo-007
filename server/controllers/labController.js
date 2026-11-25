@@ -263,8 +263,6 @@ export const submitLabResults = ah(async (req, res) => {
       console.warn('[Lab] critical alert notification skipped:', notifErr?.message);
     }
   }
-    });
-  }
 
   // Timeline
   await db.from('hospital_case_timeline').insert({
