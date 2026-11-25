@@ -15,7 +15,8 @@ export async function audit(req, action, { resourceType = null, resourceId = nul
       }
     : detail;
 
-  await db.from('audit_log').insert({
+  // Non-blocking append-only audit write so primary HTTP response returns immediately
+  db.from('audit_log').insert({
     actor_id: actorId ?? req?.session?.sub ?? null,
     actor_role: actorRole ?? req?.session?.role ?? 'anonymous',
     action,
@@ -24,5 +25,7 @@ export async function audit(req, action, { resourceType = null, resourceId = nul
     detail: enrichedDetail,
     hospital_id: hospitalId ?? req?.tenant?.id ?? req?.session?.hospital_id ?? null,
     ip_address: req?.ip ?? null
-  });
+  }).then(({ error }) => {
+    if (error) console.warn('[Audit] insert warning:', error.message);
+  }).catch(err => console.warn('[Audit] insert error:', err?.message));
 }

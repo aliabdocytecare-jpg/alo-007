@@ -86,7 +86,7 @@ function StaffTab() {
           </tr>
         </thead>
         <tbody>
-          {(data || []).map(s => (
+          {(data || []).filter(s => !s.hospital_id && ['nurse', 'admin', 'coordinator'].includes(s.role)).map(s => (
             <tr key={s.id}>
               <td>{s.full_name}</td>
               <td>{t(s.role)}</td>

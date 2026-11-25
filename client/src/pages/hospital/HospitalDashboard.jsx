@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { api, errMsg, fmtDate } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useI18n } from '../../lib/i18n';
-import { Msg, Field, StatusBadge } from '../../components/ui';
+import { Msg, Field, StatusBadge, ActionButton } from '../../components/ui';
 
 export default function HospitalDashboard() {
   const { session } = useAuth();
@@ -257,11 +257,17 @@ export default function HospitalDashboard() {
   const dispenseMedication = async (medId) => {
     setErr(''); setOk('');
     try {
-      await api.post(`/hospital/pharmacy/medications/${medId}/dispense`, { dispense_note: dispenseNote });
+      await api.post(`/hospital/pharmacy/medications/${medId}/dispense`, {
+        dispense_status: 'dispensed',
+        dispense_note: dispenseNote,
+      });
       setOk('Prescription dispensed.');
       setDispenseNote('');
       reloadData();
-    } catch (e) { setErr(errMsg(e)); }
+    } catch (e) {
+      setErr(errMsg(e));
+      throw e;
+    }
   };
 
   // Admin: Create staff member (doctor, reception, lab, pharmacy)
@@ -345,7 +351,7 @@ export default function HospitalDashboard() {
                 onChange={e => setCheckinCode(e.target.value.toUpperCase())}
                 style={{ maxWidth: 300 }}
               />
-              <button onClick={doCheckin} disabled={!checkinCode.trim()}>{t('checkinBtn')}</button>
+              <ActionButton onClick={doCheckin} disabled={!checkinCode.trim()} okText="Checked In">{t('checkinBtn')}</ActionButton>
               <button onClick={() => setShowNewPatient(!showNewPatient)}>+ New Walk-in Patient</button>
             </div>
 
@@ -479,7 +485,7 @@ export default function HospitalDashboard() {
                 </Field>
 
                 <div className="row" style={{ marginTop: 12, gap: 10 }}>
-                  <button onClick={saveOpinion} disabled={!doctorOpinion.trim()}>Complete Consultation & Save</button>
+                  <ActionButton onClick={saveOpinion} disabled={!doctorOpinion.trim()} okText="Saved">Complete Consultation & Save</ActionButton>
                   <button onClick={() => setShowIntlModal(true)}>🌐 Request Global Second Opinion (Bridge 2)</button>
                   <a
                     className="btn"
@@ -504,7 +510,7 @@ export default function HospitalDashboard() {
                       ))}
                     </select>
                   </Field>
-                  <button onClick={orderLab} disabled={!selectedTestId} style={{ marginTop: 8 }}>Place Lab Order</button>
+                  <ActionButton onClick={orderLab} disabled={!selectedTestId} style={{ marginTop: 8 }} okText="Ordered">Place Lab Order</ActionButton>
                 </section>
 
                 <section className="box">
@@ -608,13 +614,13 @@ export default function HospitalDashboard() {
                 <label><input type="checkbox" checked={isAbnormal} onChange={e => setIsAbnormal(e.target.checked)} /> Abnormal Flag</label>
                 <label><input type="checkbox" checked={isCritical} onChange={e => setIsCritical(e.target.checked)} /> Critical Alert</label>
               </div>
-              {selectedLabTest.status === 'resulted' && (
+              {['resulted', 'verified', 'amended'].includes(selectedLabTest.status) && (
                 <Field label="Amendment Reason (Audit Log)">
                   <input value={amendReason} onChange={e => setAmendReason(e.target.value)} placeholder="Reason for result amendment" />
                 </Field>
               )}
               <div className="row" style={{ marginTop: 12 }}>
-                <button onClick={submitResult}>Save & Verify Result</button>
+                <ActionButton onClick={submitResult} okText="Verified">Save & Verify Result</ActionButton>
                 <button onClick={() => setSelectedLabTest(null)}>Cancel</button>
               </div>
             </section>
@@ -672,7 +678,7 @@ export default function HospitalDashboard() {
                   <td><strong>{m.drug_name}</strong></td>
                   <td>{m.dosage} · {m.frequency} for {m.duration_days} days</td>
                   <td>
-                    <button onClick={() => dispenseMedication(m.id)}>Dispense Medication</button>
+                    <ActionButton onClick={() => dispenseMedication(m.id)} okText="Dispensed">Dispense Medication</ActionButton>
                   </td>
                 </tr>
               ))}

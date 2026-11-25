@@ -238,6 +238,11 @@ export const releaseReport = ah(async (req, res) => {
 
   // Update cases table flags for DEC-056 / PDF generator compatibility
   const { final_report_ar: bodyReportAr, final_report_en: bodyReportEn } = req.body || {};
+  const resolvedAr = bodyReportAr?.trim() || c.final_report_ar;
+  if (!resolvedAr) {
+    throw httpError(400, 'Arabic final report translation (final_report_ar) is mandatory before releasing to the patient.');
+  }
+
   const reportTextEn = bodyReportEn?.trim()
     || (review?.findings ? `FINDINGS:\n${review.findings}\n\nRECOMMENDATION:\n${review.recommendation}` : null)
     || (caseRev?.clinical_findings ? `FINDINGS:\n${caseRev.clinical_findings}\n\nRECOMMENDATION:\n${caseRev.recommendations || caseRev.diagnostic_assessment}` : cons?.final_report);
@@ -246,7 +251,7 @@ export const releaseReport = ah(async (req, res) => {
     final_report_published: true,
     final_report_published_at: now,
     final_report_en: reportTextEn || c.final_report_en || 'Specialist consultation complete',
-    final_report_ar: bodyReportAr?.trim() || c.final_report_ar || reportTextEn || 'تم إصدار التقرير الطبي للمريض',
+    final_report_ar: resolvedAr,
     updated_at: now
   }).eq('id', c.id);
 

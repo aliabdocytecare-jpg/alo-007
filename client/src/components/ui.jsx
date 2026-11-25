@@ -237,3 +237,53 @@ export function useAsync(fn, deps = []) {
   }, [...deps, tick]);
   return { data, err, loading, reload, setErr };
 }
+
+export function Spinner() {
+  return <span className="alo-spinner" aria-hidden="true" />;
+}
+
+export function ActionButton({ onClick, disabled, children, style, className = '', type = 'button', okText = 'Saved' }) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState({ ok: '', err: '' });
+
+  const handleClick = async (e) => {
+    if (!onClick || busy || disabled) return;
+    setBusy(true);
+    setStatus({ ok: '', err: '' });
+    try {
+      const res = await onClick(e);
+      if (res !== false) {
+        setStatus({ ok: typeof res === 'string' ? res : okText, err: '' });
+      }
+    } catch (err) {
+      setStatus({ ok: '', err: errMsg(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <button
+        type={type}
+        className={className}
+        disabled={disabled || busy}
+        onClick={handleClick}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, ...style }}
+      >
+        {busy && <Spinner />}
+        {children}
+      </button>
+      {status.ok && (
+        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#15803d', background: '#dcfce7', border: '1px solid #86efac', padding: '3px 8px', borderRadius: 4 }}>
+          ✓ {status.ok}
+        </span>
+      )}
+      {status.err && (
+        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', padding: '3px 8px', borderRadius: 4 }}>
+          ⚠ {status.err}
+        </span>
+      )}
+    </span>
+  );
+}

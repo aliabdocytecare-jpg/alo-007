@@ -249,15 +249,20 @@ export const submitLabResults = ah(async (req, res) => {
 
   if (error) throw httpError(500, error.message);
 
-  // If critical result, notify the requesting doctor
-  if (updated.critical_result) {
-    await db.from('notifications').insert({
-      hospital_id: req.tenant.id,
-      recipient_type: 'staff',
-      recipient_id: updated.requested_by,
-      event_type: 'CRITICAL_LAB_ALERT',
-      title: `Critical Lab Result: ${updated.test_name}`,
-      body: `Test ${updated.test_name} for Case ${updated.hospital_case_id} has critical findings. Immediate review required.`
+  // If critical result, notify the requesting doctor safely
+  if (updated.critical_result && updated.requested_by) {
+    try {
+      await db.from('notifications').insert({
+        recipient_type: 'staff',
+        recipient_id: updated.requested_by,
+        event_type: 'CRITICAL_LAB_ALERT',
+        title: `Critical Lab Result: ${updated.test_name}`,
+        body: `Test ${updated.test_name} (${updated.specimen_id}) has critical findings. Immediate review required.`
+      });
+    } catch (notifErr) {
+      console.warn('[Lab] critical alert notification skipped:', notifErr?.message);
+    }
+  }
     });
   }
 

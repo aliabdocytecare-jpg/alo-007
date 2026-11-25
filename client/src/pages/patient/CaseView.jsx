@@ -229,9 +229,17 @@ export default function CaseView() {
       {c.service_type !== 'SERVICE' && c.status !== 'CANCELLED' && (
         <section className="box">
           <h2>{t('report')}</h2>
-          {(c.report_released || c.final_report_published) && (c.report || c.final_report_en) ? (
+          {(c.report_released || c.final_report_published) && (c.final_report_ar || c.report || c.final_report_en) ? (
             <>
-              <pre className="report">{c.report || c.final_report_en}</pre>
+              <pre className="report" dir={c.final_report_ar ? 'rtl' : 'ltr'} style={{ textAlign: c.final_report_ar ? 'right' : 'left', fontSize: '1.02rem', lineHeight: 1.7 }}>
+                {c.final_report_ar || c.report || c.final_report_en}
+              </pre>
+              {c.final_report_ar && (c.final_report_en || c.report) && (c.final_report_en !== c.final_report_ar) && (
+                <details style={{ marginTop: 8 }}>
+                  <summary className="muted" style={{ cursor: 'pointer', fontSize: '0.85rem' }}>View English Clinical Reference</summary>
+                  <pre className="report" dir="ltr" style={{ marginTop: 6, background: '#f8fafc' }}>{c.final_report_en || c.report}</pre>
+                </details>
+              )}
               <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
                 <button className="no-print" onClick={() => window.print()}>{t('print')}</button>
                 <a

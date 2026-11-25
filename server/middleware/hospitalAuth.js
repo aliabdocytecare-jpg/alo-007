@@ -15,33 +15,27 @@ export async function requireHospitalMember(req, res, next) {
       return res.status(403).json({ error: 'Forbidden: staff account required', code: 'STAFF_REQUIRED' });
     }
 
-    // Re-read staff row by primary key (P8 / DEC-014 / DEC-056)
-    const { data: staff, error: staffErr } = await db
+    // Single-roundtrip join: re-read staff row + affiliated hospital together (100% live DB, 0 stale cache)
+    const { data: staffRow, error: staffErr } = await db
       .from('staff_users')
-      .select('*')
+      .select('*, hospital:hospitals(*)')
       .eq('id', req.session.sub)
       .maybeSingle();
 
-    if (staffErr || !staff) {
+    if (staffErr || !staffRow) {
       return res.status(401).json({ error: 'staff_not_found', code: 'STAFF_NOT_FOUND', message: 'Staff profile not found' });
     }
 
-    if (!staff.is_active) {
+    if (!staffRow.is_active) {
       return res.status(401).json({ error: 'account_inactive', code: 'ACCOUNT_INACTIVE', message: 'Account is deactivated' });
     }
 
-    if (!staff.hospital_id) {
+    if (!staffRow.hospital_id) {
       return res.status(403).json({ error: 'not_hospital_staff', code: 'NOT_HOSPITAL_STAFF', message: 'Hospital affiliation required' });
     }
 
-    // Verify hospital active status
-    const { data: hospital, error: hospErr } = await db
-      .from('hospitals')
-      .select('*')
-      .eq('id', staff.hospital_id)
-      .maybeSingle();
-
-    if (hospErr || !hospital) {
+    const hospital = staffRow.hospital;
+    if (!hospital) {
       return res.status(404).json({ error: 'hospital_not_found', code: 'HOSPITAL_NOT_FOUND', message: 'Associated hospital not found' });
     }
 
@@ -49,6 +43,7 @@ export async function requireHospitalMember(req, res, next) {
       return res.status(403).json({ error: 'hospital_inactive', code: 'HOSPITAL_INACTIVE', message: 'This hospital is currently inactive' });
     }
 
+    const { hospital: _h, ...staff } = staffRow;
     req.tenant = hospital;
     req.staff = staff;
     next();

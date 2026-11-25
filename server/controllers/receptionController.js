@@ -40,17 +40,18 @@ export const getReceptionQueue = ah(async (req, res) => {
 
   if (error) throw httpError(500, error.message);
 
-  // Enrich with patient and doctor names
+  // Enrich with patient and doctor names in parallel
   const patientIds = [...new Set((cases || []).map(c => c.hospital_patient_id).filter(Boolean))];
   const doctorIds = [...new Set((cases || []).map(c => c.assigned_doctor_id).filter(Boolean))];
 
-  const { data: patients } = patientIds.length
-    ? await db.from('hospital_patients').select('id, full_name, mrn, phone').in('id', patientIds)
-    : { data: [] };
-
-  const { data: doctors } = doctorIds.length
-    ? await db.from('staff_users').select('id, full_name, specialty').in('id', doctorIds)
-    : { data: [] };
+  const [{ data: patients }, { data: doctors }] = await Promise.all([
+    patientIds.length
+      ? db.from('hospital_patients').select('id, full_name, mrn, phone').in('id', patientIds)
+      : Promise.resolve({ data: [] }),
+    doctorIds.length
+      ? db.from('staff_users').select('id, full_name, specialty').in('id', doctorIds)
+      : Promise.resolve({ data: [] })
+  ]);
 
   const patientMap = Object.fromEntries((patients || []).map(p => [p.id, p]));
   const docMap = Object.fromEntries((doctors || []).map(d => [d.id, d]));

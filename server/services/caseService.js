@@ -213,7 +213,9 @@ export async function getCaseForRole(c, session, lang = 'en') {
   if (session.role === 'patient') {
     const released = !!(b.consultation?.released_at || b.review?.released_at || c.final_report_published);
     let report = null;
-    if (b.consultation?.released_at) {
+    if (released && c.final_report_ar) {
+      report = c.final_report_ar;
+    } else if (b.consultation?.released_at) {
       report = b.consultation.final_report;
     } else if (b.review?.released_at && b.review?.findings) {
       report = `FINDINGS:\n${b.review.findings}\n\nRECOMMENDATION:\n${b.review.recommendation}`;

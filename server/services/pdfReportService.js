@@ -1,5 +1,12 @@
 // DEC-062: Medical Report PDF Generator Service using PDFKit
 import PDFDocument from 'pdfkit';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ARABIC_FONT_PATH = path.resolve(__dirname, '../fonts/Amiri-Regular.ttf');
+const HAS_ARABIC_FONT = fs.existsSync(ARABIC_FONT_PATH);
 
 /**
  * Builds and streams an official medical consultation & specialist report PDF
@@ -10,6 +17,10 @@ export function buildCaseReportPdf({ caseData, patientData, streamRes }) {
     margins: { top: 50, bottom: 50, left: 50, right: 50 },
     bufferPages: true
   });
+
+  if (HAS_ARABIC_FONT) {
+    doc.registerFont('Arabic', ARABIC_FONT_PATH);
+  }
 
   doc.pipe(streamRes);
 
@@ -124,7 +135,34 @@ export function buildCaseReportPdf({ caseData, patientData, streamRes }) {
     curY = doc.y + 16;
   }
 
-  // Section: Findings & Doctor Opinion
+  // Section: Arabic Final Medical Report (Mandatory for Patient)
+  if (c.final_report_ar) {
+    if (curY > 600) { doc.addPage(); curY = 50; }
+
+    if (HAS_ARABIC_FONT) {
+      doc
+        .font('Arabic')
+        .fontSize(13)
+        .fillColor('#000000')
+        .text('التقرير الطبي النهائي', 50, curY, { width: 495, align: 'right', features: ['rtla'] });
+
+      curY = doc.y + 8;
+      doc
+        .font('Arabic')
+        .fontSize(11)
+        .fillColor('#111111')
+        .text(c.final_report_ar, 50, curY, { width: 495, align: 'right', lineGap: 4, features: ['rtla'] });
+
+      curY = doc.y + 18;
+    } else {
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text('ARABIC MEDICAL REPORT', 50, curY);
+      curY += 16;
+      doc.font('Helvetica').fontSize(9.5).text(c.final_report_ar, 50, curY, { width: 495, lineGap: 4 });
+      curY = doc.y + 16;
+    }
+  }
+
+  // Section: Findings & Doctor Opinion (English Reference)
   const mainReport = c.final_report_en || c.consultation?.final_report || c.doctor_opinion || c.report;
   if (mainReport) {
     if (curY > 600) { doc.addPage(); curY = 50; }
@@ -133,7 +171,7 @@ export function buildCaseReportPdf({ caseData, patientData, streamRes }) {
       .font('Helvetica-Bold')
       .fontSize(11)
       .fillColor('#000000')
-      .text('3. SPECIALIST OPINION & CLINICAL FINDINGS', 50, curY);
+      .text('3. SPECIALIST OPINION & CLINICAL FINDINGS (EN)', 50, curY);
 
     curY += 16;
     doc

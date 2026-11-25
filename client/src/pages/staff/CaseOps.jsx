@@ -4,7 +4,7 @@ import { useParams, Link } from 'react-router-dom';
 import { api, errMsg, fmtDate } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useI18n } from '../../lib/i18n';
-import { Msg, Field, StatusBadge, Timeline, DocumentList, FileUploader, useAsync } from '../../components/ui';
+import { Msg, Field, StatusBadge, Timeline, DocumentList, FileUploader, useAsync, ActionButton } from '../../components/ui';
 import CaseStepper from '../../components/CaseStepper';
 
 const REQUIRED_DOCS = { GMO: ['Medical Report', 'Imaging', 'Lab Result'], CONSULTATION: ['ID Document'], SERVICE: [] };
@@ -330,21 +330,8 @@ function NurseDesk({ c, reload }) {
           <h4 style={{ margin: '0 0 8px' }}>📅 Stream 2: Online Consultation Scheduling & Consultant Magic Link</h4>
           <div className="grid2">
             <Field label="Appointment Date & Time"><input type="datetime-local" value={schedAt} onChange={e => setSchedAt(e.target.value)} /></Field>
-            <Field label="Google Meet Room Link">
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meet} onChange={e => setMeet(e.target.value)} dir="ltr" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const rnd = () => Math.random().toString(36).substring(2, 5).toLowerCase();
-                    setMeet(`https://meet.google.com/${rnd()}-${rnd()}a-${rnd()}`);
-                  }}
-                  className="btn"
-                  style={{ whiteSpace: 'nowrap', padding: '6px 10px', fontSize: '0.82rem' }}
-                >
-                  ⚡ Auto-Gen Meet
-                </button>
-              </div>
+            <Field label="Google Meet Room Link (Paste valid Meet URL)">
+              <input placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meet} onChange={e => setMeet(e.target.value)} dir="ltr" />
             </Field>
           </div>
           <div style={{ marginTop: 8 }}>
@@ -395,9 +382,10 @@ function NurseDesk({ c, reload }) {
             </p>
           )}
           <div className="row" style={{ marginTop: 10 }}>
-            <button
+            <ActionButton
               disabled={!schedAt || (triSpecialist.name && !canDispatchToConsultant)}
-              onClick={() => run(async () => {
+              okText="Scheduled & Link Ready"
+              onClick={async () => {
                 const res = await api.post(`/cases/${c.id}/schedule`, {
                   scheduled_at: new Date(schedAt).toISOString(),
                   clinic_name: clinic.name || 'ALO Telehealth Room',
@@ -417,30 +405,20 @@ function NurseDesk({ c, reload }) {
                     : window.location.origin + res.data.review_url;
                   setGeneratedLink(fullUrl);
                 }
-              }, 'Consultation scheduled & Magic Link dispatched')}
+                reload();
+              }}
               style={{ background: '#0284c7', borderColor: '#0284c7', color: '#fff', fontWeight: 600 }}
             >
               {tripartite ? '🔗 Confirm Slot & Send Magic Link' : 'Confirm Consultation Slot'}
-            </button>
+            </ActionButton>
           </div>
         </div>
       )}
 
       {c.service_type === 'CONSULTATION' && c.consultation && (
         <div className="row" style={{ marginTop: 8 }}>
-          <input style={{ maxWidth: 360 }} placeholder="https://meet.google.com/xxx-xxxx-xxx" value={meet} onChange={e => setMeet(e.target.value)} dir="ltr" />
-          <button
-            type="button"
-            onClick={() => {
-              const rnd = () => Math.random().toString(36).substring(2, 5).toLowerCase();
-              setMeet(`https://meet.google.com/${rnd()}-${rnd()}a-${rnd()}`);
-            }}
-            className="btn"
-            style={{ padding: '6px 10px', fontSize: '0.85rem' }}
-          >
-            ⚡ Auto-Gen
-          </button>
-          <button onClick={() => run(() => api.patch(`/cases/${c.id}/meet-link`, { meet_url: meet }))}>{t('meetLink')}</button>
+          <input style={{ maxWidth: 360 }} placeholder="Paste valid Google Meet link (https://meet.google.com/...)" value={meet} onChange={e => setMeet(e.target.value)} dir="ltr" />
+          <ActionButton okText="Meet Link Updated" onClick={async () => { await api.patch(`/cases/${c.id}/meet-link`, { meet_url: meet }); reload(); }}>{t('meetLink')}</ActionButton>
           {c.consultation.meet_url && <span className="muted">{c.consultation.meet_url}</span>}
         </div>
       )}
@@ -492,10 +470,11 @@ function NurseDesk({ c, reload }) {
               <option value="second_review">Second Review</option>
               <option value="follow_up">Follow-Up Review</option>
             </select>
-            <button
+            <ActionButton
               disabled={!spec.name || !spec.phone || !canDispatchToConsultant}
+              okText="Magic Link Sent"
               style={{ background: canDispatchToConsultant ? '#0284c7' : '#94a3b8', borderColor: canDispatchToConsultant ? '#0284c7' : '#94a3b8', color: '#fff', fontWeight: 600 }}
-              onClick={() => run(async () => {
+              onClick={async () => {
                 const res = await api.post(`/cases/${c.id}/reviews/dispatch`, {
                   specialist_id: spec.id || undefined,
                   specialist_name: spec.name,
@@ -512,10 +491,11 @@ function NurseDesk({ c, reload }) {
                     : window.location.origin + res.data.review_url;
                   setGeneratedLink(fullUrl);
                 }
-              }, 'Magic Link generated & ready for specialist')}
+                reload();
+              }}
             >
               🔗 Send Magic Link
-            </button>
+            </ActionButton>
           </div>
         </div>
       )}
@@ -697,23 +677,35 @@ function NurseDesk({ c, reload }) {
             {reportText || 'No report text available'}
           </pre>
           <div style={{ marginTop: 12 }}>
-            <Field label="Arabic Translation for Patient (الترجمة العربية للمريض — Optional / Editable)">
+            <Field label="Arabic Final Report for Patient (التقرير الطبي النهائي بالعربية — Required *)">
               <textarea
                 dir="rtl"
+                required
                 value={finalReportAr}
                 onChange={e => setFinalReportAr(e.target.value)}
-                placeholder="اكتب أو عدّل الترجمة العربية للتقرير الطبي ليظهر للمريض بالعربية..."
-                style={{ minHeight: 90, background: '#fff' }}
+                placeholder="اكتب الترجمة العربية الكاملة للتقرير الطبي (مطلوب قبل الإرسال للمريض)..."
+                style={{ minHeight: 100, background: '#fff', borderColor: !finalReportAr.trim() ? '#fca5a5' : '#86efac' }}
               />
             </Field>
+            {!finalReportAr.trim() && (
+              <p style={{ color: '#dc2626', fontSize: '0.82rem', margin: '4px 0 0' }}>
+                ⚠ Arabic translation is mandatory before releasing the final report to the patient.
+              </p>
+            )}
           </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-            <button
-              style={{ background: '#16a34a', borderColor: '#16a34a', color: '#fff', fontWeight: 700, padding: '10px 22px', fontSize: '1rem', borderRadius: '6px', cursor: 'pointer' }}
-              onClick={() => { if (window.confirm(t('confirmSubmit') || 'Confirm release report to patient?')) run(() => api.post(`/cases/${c.id}/release`, { final_report_ar: finalReportAr })); }}
+          <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <ActionButton
+              disabled={!finalReportAr.trim()}
+              okText="Released to Patient"
+              style={{ background: finalReportAr.trim() ? '#16a34a' : '#94a3b8', borderColor: finalReportAr.trim() ? '#16a34a' : '#94a3b8', color: '#fff', fontWeight: 700, padding: '10px 22px', fontSize: '1rem', borderRadius: '6px', cursor: finalReportAr.trim() ? 'pointer' : 'not-allowed' }}
+              onClick={async () => {
+                if (!window.confirm(t('confirmSubmit') || 'Confirm release Arabic report to patient?')) return false;
+                await api.post(`/cases/${c.id}/release`, { final_report_ar: finalReportAr.trim() });
+                reload();
+              }}
             >
               ✓ Release Final Report to Patient
-            </button>
+            </ActionButton>
             <a
               className="btn"
               href={`/api/v1/cases/${c.id}/report/pdf`}

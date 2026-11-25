@@ -2,6 +2,7 @@
 // Helmet/CORS -> Rate limit -> Session resolver -> RBAC guard -> Controller.
 import 'dotenv/config';
 import express from 'express';
+import compression from 'compression';
 import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -37,6 +38,7 @@ import { getWhatsAppConfig, whatsappMode, checkTemplateDrift } from './services/
 import { TERMINAL } from './services/stateMachine.js';
 
 export const app = express();
+app.use(compression());
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.set('trust proxy', 1); // Nginx/Traefik reverse proxy (Blueprint §6)
 // DEC-049: CSP tuned so the same-origin React SPA works (inline styles/scripts, self API/PDF).

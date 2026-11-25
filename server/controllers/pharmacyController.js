@@ -116,10 +116,11 @@ export const prescribeMedication = ah(async (req, res) => {
  */
 export const dispenseMedication = ah(async (req, res) => {
   const { id } = req.params;
-  const { dispense_status, dispense_note } = req.body;
+  const dispense_status = req.body?.dispense_status || 'dispensed';
+  const { dispense_note } = req.body || {};
   const allowed = ['dispensed', 'partial', 'cancelled'];
 
-  if (!dispense_status || !allowed.includes(dispense_status)) {
+  if (!allowed.includes(dispense_status)) {
     throw httpError(400, `dispense_status must be one of: ${allowed.join(', ')}`);
   }
 
