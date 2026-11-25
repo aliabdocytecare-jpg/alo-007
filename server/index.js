@@ -242,7 +242,7 @@ api.patch('/hospital/slot-templates/:id', requireHospitalMember, requireHospital
 // ---- Hospital Reception & Check-in (DEC-056) ----
 api.get('/hospital/reception/queue', requireHospitalMember, requireHospitalRole('reception', 'hospital_admin', 'doctor'), reception.getReceptionQueue);
 api.post('/hospital/reception/checkin', requireHospitalMember, requireHospitalRole('reception', 'hospital_admin'), reception.checkinPatient);
-api.post('/hospital/reception/arrival', requireHospitalMember, requireHospitalRole('reception', 'hospital_admin'), reception.updateArrivalStatus);
+api.post('/hospital/reception/arrival', requireHospitalMember, requireHospitalRole('reception', 'doctor', 'hospital_admin'), reception.updateArrivalStatus);
 api.get('/hospital/appointment-requests', requireHospitalMember, requireHospitalRole('reception', 'hospital_admin'), reception.listAppointmentRequests);
 api.post('/hospital/appointment-requests/:id/decision', requireHospitalMember, requireHospitalRole('reception', 'hospital_admin'), reception.makeAppointmentDecision);
 
