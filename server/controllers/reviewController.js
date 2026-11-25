@@ -365,7 +365,7 @@ export const submitReview = ah(async (req, res) => {
   await audit(req, 'INTL_REVIEW_SUBMITTED', {
     resourceType: 'case',
     resourceId: t.case_id,
-    detail: { round: t.round_number || 1, has_voice: !!activeVoiceNote },
+    detail: { round: t.round_number || 1 },
     actorId: null,
     actorRole: 'specialist'
   });
