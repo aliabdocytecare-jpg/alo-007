@@ -694,7 +694,7 @@ export const listAllPatients = ah(async (req, res) => {
     { data: aloCases },
     { data: hospCases }
   ] = await Promise.all([
-    db.from('patients').select('id, full_name, phone, email, dob, gender, nationality, national_id, created_at').order('created_at', { ascending: false }),
+    db.from('patients').select('id, full_name, phone, email, dob, gender, nationality, created_at').order('created_at', { ascending: false }),
     db.from('hospital_patients').select('id, hospital_id, patient_id, mrn, full_name, phone, dob, gender, created_at').order('created_at', { ascending: false }),
     db.from('hospitals').select('id, name'),
     db.from('cases').select('id, patient_id'),
@@ -716,7 +716,7 @@ export const listAllPatients = ah(async (req, res) => {
       email: p.email || '—',
       dob: p.dob || '—',
       gender: p.gender || '—',
-      identifier: p.national_id || '—',
+      identifier: p.nationality || '—',
       hospital_name: 'ALO Portal',
       cases_count: aloCaseCount[p.id] || 0,
       created_at: p.created_at
