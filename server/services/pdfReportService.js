@@ -402,6 +402,7 @@ export function buildHospitalClinicVisitPdf({ hospitalCaseData, hospitalData, pa
     curY += 17;
 
     labTests.forEach((t, idx) => {
+      if (curY > 730) { doc.addPage(); curY = 50; }
       const bg = idx % 2 === 0 ? '#f9f9f9' : '#ffffff';
       doc.rect(50, curY, 495, 16).fill(bg);
       doc
@@ -413,6 +414,20 @@ export function buildHospitalClinicVisitPdf({ hospitalCaseData, hospitalData, pa
         .text((t.priority || 'routine').toUpperCase(), 340, curY + 4)
         .text((t.status || 'requested').toUpperCase(), 440, curY + 4);
       curY += 16;
+
+      if (t.results) {
+        const resText = typeof t.results === 'object'
+          ? (t.results.text_result || Object.entries(t.results).map(([k, v]) => `${k}: ${v}`).join(', '))
+          : String(t.results);
+        if (resText) {
+          doc
+            .font('Helvetica')
+            .fontSize(7.5)
+            .fillColor('#333333')
+            .text(`Result (${(t.result_status || 'normal').toUpperCase()}): ${resText}`, 64, curY + 2, { width: 475 });
+          curY = doc.y + 4;
+        }
+      }
     });
 
     curY += 12;
@@ -451,7 +466,7 @@ export function buildHospitalClinicVisitPdf({ hospitalCaseData, hospitalData, pa
         .text(`${m.drug_name} (${m.dosage})`, 58, curY + 4)
         .text(m.frequency || 'As directed', 230, curY + 4)
         .text(m.duration_days ? `${m.duration_days} days` : '—', 340, curY + 4)
-        .text((m.status || 'prescribed').toUpperCase(), 440, curY + 4);
+        .text((m.dispense_status || m.status || 'prescribed').toUpperCase(), 440, curY + 4);
       curY += 16;
     });
 

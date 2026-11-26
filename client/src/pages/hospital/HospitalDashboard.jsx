@@ -73,14 +73,20 @@ export default function HospitalDashboard() {
   const [receptionSearch, setReceptionSearch] = useState('');
   const [doctorSearch, setDoctorSearch] = useState('');
   const [tubeLabelTest, setTubeLabelTest] = useState(null);
+  const [receptionCases, setReceptionCases] = useState([]);
+  const [selectedReceptionCase, setSelectedReceptionCase] = useState(null);
 
   const reloadData = async () => {
     setErr('');
     try {
       api.get('/specialties').then(r => setSpecialtiesList(r.data || [])).catch(() => {});
       if (tab === 'reception' || tab === 'doctor') {
-        const qRes = await api.get('/hospital/reception/queue');
+        const [qRes, cRes] = await Promise.all([
+          api.get('/hospital/reception/queue'),
+          tab === 'reception' ? api.get('/hospital/cases').catch(() => ({ data: { cases: [] } })) : Promise.resolve(null)
+        ]);
         setQueue(qRes.data.queue || {});
+        if (cRes) setReceptionCases(cRes.data.cases || []);
       }
       if (tab === 'doctor' || tab === 'lab' || tab === 'hospital_admin') {
         const catRes = await api.get('/hospital/test-catalogue').catch(() => ({ data: { catalogue: [] } }));
@@ -180,14 +186,14 @@ export default function HospitalDashboard() {
     if (!activeCase) return;
     setErr(''); setOk('');
     try {
-      await api.post(`/hospital/cases/${activeCase.id}/opinion`, {
-        doctor_opinion: doctorOpinion,
-        status: 'completed'
+      const { data } = await api.post(`/hospital/cases/${activeCase.id}/opinion`, {
+        doctor_opinion: doctorOpinion.trim() || 'Consultation completed.',
+        completed: true
       });
-      setOk('Consultation completed and saved to chart.');
+      setOk(`Consultation saved (Status: ${data.case?.status || 'completed'}).`);
       setActiveCase(null);
       reloadData();
-    } catch (e) { setErr(errMsg(e)); }
+    } catch (e) { setErr(errMsg(e)); throw e; }
   };
 
   // Doctor: Order Lab Test
@@ -202,7 +208,9 @@ export default function HospitalDashboard() {
       });
       setOk(`Lab test ordered. Specimen ID: ${data.test.specimen_id}`);
       setSelectedTestId('');
-    } catch (e) { setErr(errMsg(e)); }
+      const cRes = await api.get(`/hospital/cases/${activeCase.id}`);
+      setActiveCase(cRes.data.case);
+    } catch (e) { setErr(errMsg(e)); throw e; }
   };
 
   // Doctor: Prescribe Medication
@@ -214,6 +222,16 @@ export default function HospitalDashboard() {
       await api.post(`/hospital/cases/${activeCase.id}/medications`, newMed);
       setOk(`Prescribed: ${newMed.drug_name}`);
       setNewMed({ drug_name: '', dosage: '', frequency: 'Once daily', duration_days: 7 });
+      const cRes = await api.get(`/hospital/cases/${activeCase.id}`);
+      setActiveCase(cRes.data.case);
+    } catch (e) { setErr(errMsg(e)); }
+  };
+
+  const openReceptionCase = async (caseId) => {
+    setErr('');
+    try {
+      const { data } = await api.get(`/hospital/cases/${caseId}`);
+      setSelectedReceptionCase(data.case);
     } catch (e) { setErr(errMsg(e)); }
   };
 
@@ -417,13 +435,141 @@ export default function HospitalDashboard() {
               <div className="card">
                 <h3>Done / Completed ({(queue.done || []).filter(c => matchesFilter(c, receptionSearch)).length})</h3>
                 {(queue.done || []).filter(c => matchesFilter(c, receptionSearch)).map(c => (
-                  <div key={c.id} style={{ borderBottom: '1px solid #ddd', padding: '6px 0', opacity: 0.6 }}>
-                    <span>{c.queue_number} · {c.patient?.full_name}</span>
+                  <div key={c.id} style={{ borderBottom: '1px solid #ddd', padding: '6px 0' }}>
+                    <div><strong>{c.queue_number}</strong> · {c.patient?.full_name}</div>
+                    <div className="row" style={{ gap: 6, marginTop: 4 }}>
+                      <button style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => openReceptionCase(c.id)}>View History</button>
+                      <a className="btn" href={`/api/v1/hospital/cases/${c.id}/report/pdf`} download={`Clinic_Visit_${c.case_number}.pdf`} style={{ padding: '2px 8px', fontSize: 11, textDecoration: 'none' }}>📄 PDF</a>
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           </section>
+
+          <section className="box" style={{ marginTop: 14 }}>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <h2 style={{ margin: 0 }}>Clinic Case History (Walk-in & Referred) ({receptionCases.filter(c => matchesFilter(c, receptionSearch)).length})</h2>
+              <button onClick={reloadData}>Refresh</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Case #</th>
+                  <th>Queue / Code</th>
+                  <th>Patient (MRN)</th>
+                  <th>Doctor</th>
+                  <th>Source</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {receptionCases.filter(c => matchesFilter(c, receptionSearch)).map(c => (
+                  <tr key={c.id}>
+                    <td><strong>{c.case_number}</strong></td>
+                    <td>{c.queue_number || '—'} · <span className="muted">{c.checkin_code}</span></td>
+                    <td>{c.patient?.full_name || '—'}<br /><span className="muted">{c.patient?.mrn || ''}</span></td>
+                    <td>{c.doctor?.full_name || 'Unassigned'}</td>
+                    <td><span className="muted">{c.source === 'hospital' ? 'Walk-in' : c.source}</span></td>
+                    <td><span className="badge">{c.status}</span></td>
+                    <td>
+                      <div className="row" style={{ gap: 6 }}>
+                        <button style={{ padding: '3px 8px', fontSize: 12 }} onClick={() => openReceptionCase(c.id)}>View Details</button>
+                        <a
+                          className="btn"
+                          href={`/api/v1/hospital/cases/${c.id}/report/pdf`}
+                          download={`Clinic_Visit_${c.case_number}.pdf`}
+                          style={{ padding: '3px 8px', fontSize: 12, textDecoration: 'none' }}
+                        >
+                          📄 PDF
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {receptionCases.filter(c => matchesFilter(c, receptionSearch)).length === 0 && (
+                  <tr><td colSpan={7} className="muted">No clinic cases found.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+
+          {selectedReceptionCase && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+              <div className="box" style={{ background: '#fff', maxWidth: 720, width: '92%', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h2 style={{ margin: 0 }}>Case History: {selectedReceptionCase.case_number}</h2>
+                  <button onClick={() => setSelectedReceptionCase(null)}>Close</button>
+                </div>
+                <p className="muted" style={{ marginTop: 6 }}>
+                  Patient: <strong>{selectedReceptionCase.patient?.full_name}</strong> (MRN: {selectedReceptionCase.patient?.mrn}) ·
+                  Doctor: <strong>{selectedReceptionCase.doctor?.full_name || '—'}</strong> ·
+                  Status: <span className="badge">{selectedReceptionCase.status}</span>
+                </p>
+
+                <div style={{ marginTop: 10 }}>
+                  <h4>Doctor Consultation Notes & Diagnosis</h4>
+                  <pre className="report" style={{ background: '#f8fafc', padding: 10, borderRadius: 6, whiteSpace: 'pre-wrap' }}>
+                    {selectedReceptionCase.doctor_opinion || 'No consultation notes recorded yet.'}
+                  </pre>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <h4>Laboratory Tests & Results ({(selectedReceptionCase.lab_tests || []).length})</h4>
+                  {(selectedReceptionCase.lab_tests || []).length === 0 ? (
+                    <p className="muted">No lab tests ordered.</p>
+                  ) : (
+                    <table>
+                      <thead><tr><th>Specimen</th><th>Test</th><th>Status</th><th>Result</th></tr></thead>
+                      <tbody>
+                        {selectedReceptionCase.lab_tests.map(lt => (
+                          <tr key={lt.id}>
+                            <td>{lt.specimen_id}</td>
+                            <td>{lt.test_name}</td>
+                            <td><span className="badge">{lt.status}</span></td>
+                            <td>{lt.results ? (typeof lt.results === 'object' ? (lt.results.text_result || JSON.stringify(lt.results)) : String(lt.results)) : 'Pending'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <h4>Prescribed Medications & Dispensing ({(selectedReceptionCase.medications || []).length})</h4>
+                  {(selectedReceptionCase.medications || []).length === 0 ? (
+                    <p className="muted">No medications prescribed.</p>
+                  ) : (
+                    <table>
+                      <thead><tr><th>Drug</th><th>Dosage / Duration</th><th>Dispense Status</th></tr></thead>
+                      <tbody>
+                        {selectedReceptionCase.medications.map(m => (
+                          <tr key={m.id}>
+                            <td><strong>{m.drug_name}</strong></td>
+                            <td>{m.dosage} · {m.frequency} · {m.duration_days} days</td>
+                            <td><span className="badge">{m.dispense_status || m.status || 'prescribed'}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                <div className="row" style={{ marginTop: 16, gap: 10 }}>
+                  <a
+                    className="btn"
+                    href={`/api/v1/hospital/cases/${selectedReceptionCase.id}/report/pdf`}
+                    download={`Clinic_Visit_${selectedReceptionCase.case_number}.pdf`}
+                    style={{ textDecoration: 'none' }}
+                  >
+                    📄 Download Visit Summary (PDF)
+                  </a>
+                  <button onClick={() => setSelectedReceptionCase(null)}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -485,7 +631,13 @@ export default function HospitalDashboard() {
                 </Field>
 
                 <div className="row" style={{ marginTop: 12, gap: 10 }}>
-                  <ActionButton onClick={saveOpinion} disabled={!doctorOpinion.trim()} okText="Saved">Complete Consultation & Save</ActionButton>
+                  <ActionButton
+                    onClick={saveOpinion}
+                    disabled={!doctorOpinion.trim() && !(activeCase.lab_tests?.length || activeCase.medications?.length)}
+                    okText="Saved"
+                  >
+                    Complete Consultation & Save
+                  </ActionButton>
                   <button onClick={() => setShowIntlModal(true)}>🌐 Request Global Second Opinion (Bridge 2)</button>
                   <a
                     className="btn"
@@ -496,6 +648,36 @@ export default function HospitalDashboard() {
                     📄 Download Visit Summary (PDF)
                   </a>
                 </div>
+
+                {(activeCase.lab_tests?.length > 0 || activeCase.medications?.length > 0) && (
+                  <div style={{ marginTop: 14, borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
+                    {activeCase.lab_tests?.length > 0 && (
+                      <div style={{ marginBottom: 8 }}>
+                        <strong>Ordered Lab Tests ({activeCase.lab_tests.length}):</strong>
+                        <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+                          {activeCase.lab_tests.map(lt => (
+                            <li key={lt.id}>
+                              {lt.test_name} ({lt.specimen_id}) — <strong>{lt.status}</strong>
+                              {lt.results ? `: ${typeof lt.results === 'object' ? (lt.results.text_result || JSON.stringify(lt.results)) : String(lt.results)}` : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {activeCase.medications?.length > 0 && (
+                      <div>
+                        <strong>Prescribed Medications ({activeCase.medications.length}):</strong>
+                        <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+                          {activeCase.medications.map(m => (
+                            <li key={m.id}>
+                              {m.drug_name} ({m.dosage}) — <strong>{m.dispense_status || m.status || 'prescribed'}</strong>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </section>
 
               {/* Order Lab & Rx */}

@@ -309,7 +309,8 @@ export const saveDoctorOpinion = ah(async (req, res) => {
   if (follow_up !== undefined) updates.follow_up = follow_up;
 
   // Check if case can be marked completed
-  if (completed) {
+  const isComplete = Boolean(completed || req.body.status === 'completed');
+  if (isComplete) {
     const { data: pendingLabs } = await db
       .from('hospital_lab_tests')
       .select('id')
@@ -328,6 +329,7 @@ export const saveDoctorOpinion = ah(async (req, res) => {
       updates.status = 'pending_pharmacy';
     } else {
       updates.status = 'completed';
+      updates.arrival_status = 'done';
     }
   } else if (c.status === 'new') {
     updates.status = 'in_consultation';
