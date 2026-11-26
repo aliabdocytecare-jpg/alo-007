@@ -355,7 +355,7 @@ export const submitReview = ah(async (req, res) => {
   if (c.status === 'SPECIALIST_ASSIGNED') {
     await transition(t.case_id, 'UNDER_MEDICAL_REVIEW', { actorRole: 'system' });
   }
-  if (['SPECIALIST_ASSIGNED', 'UNDER_MEDICAL_REVIEW'].includes(c.status)) {
+  if (['SPECIALIST_ASSIGNED', 'UNDER_MEDICAL_REVIEW', 'APPOINTMENT_SCHEDULED', 'IN_PROGRESS'].includes(c.status)) {
     await transition(t.case_id, 'REPORT_SUBMITTED', {
       actorRole: 'international',
       note: `Opinion submitted by Dr. ${t.specialist_name || 'Specialist'}`

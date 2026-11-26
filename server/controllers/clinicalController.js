@@ -216,10 +216,13 @@ export const submitReport = ah(async (req, res) => {
 // US-CRD-008 / BR-015 / N-09: release makes report patient-visible; COMPLETED (+FOLLOW_UP).
 export const releaseReport = ah(async (req, res) => {
   const c = req.case;
-  if (c.status !== 'REPORT_SUBMITTED') throw httpError(409, 'No submitted report awaiting release.');
   const { data: cons } = await db.from('consultations').select().eq('case_id', c.id).maybeSingle();
   const { data: review } = await db.from('international_reviews').select().eq('case_id', c.id).maybeSingle();
   const { data: caseRev } = await db.from('case_reviews').select().eq('case_id', c.id).eq('status', 'submitted').order('created_at', { ascending: false }).limit(1).maybeSingle();
+  const hasSubmittedOpinion = Boolean(cons?.final_report || review?.status === 'SUBMITTED' || caseRev);
+  const canReleaseFromStage = c.status === 'REPORT_SUBMITTED'
+    || (hasSubmittedOpinion && ['APPOINTMENT_SCHEDULED', 'IN_PROGRESS', 'SPECIALIST_ASSIGNED', 'UNDER_MEDICAL_REVIEW'].includes(c.status));
+  if (!canReleaseFromStage) throw httpError(409, 'No submitted report awaiting release.');
   const now = new Date().toISOString();
 
   let releasedAnything = false;
@@ -259,6 +262,9 @@ export const releaseReport = ah(async (req, res) => {
     throw httpError(409, 'No final report or opinion found to release.');
   }
 
+  if (c.status !== 'REPORT_SUBMITTED') {
+    await transition(c.id, 'REPORT_SUBMITTED', { actorRole: 'system', note: 'Report submitted by specialist' });
+  }
   await transition(c.id, 'COMPLETED', { actorId: req.session.sub, actorRole: req.session.role || 'nurse', note: 'Report released to patient by ALO Nurse' });
   if (c.follow_up_recommended) await transition(c.id, 'FOLLOW_UP', { actorRole: 'system', note: 'Follow-up recommended by doctor' });
   await audit(req, 'REPORT_RELEASED', { resourceType: 'case', resourceId: c.id });

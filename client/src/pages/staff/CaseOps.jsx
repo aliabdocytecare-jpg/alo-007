@@ -595,7 +595,7 @@ function NurseDesk({ c, reload }) {
       )}
 
       {/* Report Preview & Final Release to Patient */}
-      {c.status === 'REPORT_SUBMITTED' && (
+      {(c.status === 'REPORT_SUBMITTED' || (reportText && !['COMPLETED', 'CANCELLED', 'FOLLOW_UP'].includes(c.status))) && (
         <div style={{ marginTop: 14, border: '2px solid #16a34a', borderRadius: '8px', padding: 14, background: '#f0fdf4' }}>
           <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: '0 0 8px', color: '#166534', display: 'flex', alignItems: 'center', gap: 6 }}>
