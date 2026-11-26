@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { api, errMsg, fmtDate } from '../../lib/api';
 import { useI18n } from '../../lib/i18n';
-import { Msg, Field, PasswordInput, useAsync } from '../../components/ui';
+import { Msg, Field, PasswordInput, ActionButton, useAsync } from '../../components/ui';
 
 function StaffTab() {
   const { t } = useI18n();
@@ -927,11 +927,98 @@ function ConsultantsTab() {
   );
 }
 
+function CasesTab() {
+  const { data, err, loading, reload } = useAsync(() => api.get('/admin/cases').then(r => r.data));
+  const [search, setSearch] = useState('');
+  const [state, setState] = useState({ err: '', ok: '' });
+
+  const q = search.trim().toLowerCase();
+  const rows = (data || []).filter(c =>
+    !q ||
+    (c.case_number || '').toLowerCase().includes(q) ||
+    (c.patient_name || '').toLowerCase().includes(q) ||
+    (c.patient_phone || '').toLowerCase().includes(q) ||
+    (c.hospital_name || '').toLowerCase().includes(q) ||
+    (c.status || '').toLowerCase().includes(q)
+  );
+
+  const deleteCase = async (c) => {
+    const msg = `Permanently delete Case "${c.case_number}" (${c.patient_name})?\n\nAll case history, documents, reviews, prescriptions, and lab records will be removed from the database. This cannot be undone.`;
+    if (!window.confirm(msg)) return false;
+    setState({ err: '', ok: '' });
+    try {
+      const res = await api.delete(`/admin/cases/${c.source}/${c.id}`);
+      setState({ ok: res.data?.message || `Case ${c.case_number} deleted.`, err: '' });
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+      throw e;
+    }
+  };
+
+  return (
+    <section className="box">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <h2 style={{ margin: 0 }}>All Cases ({rows.length})</h2>
+        <div className="row" style={{ gap: 8 }}>
+          <input
+            placeholder="Search Case #, Patient, Phone, Status..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ maxWidth: 280 }}
+          />
+          <button onClick={reload}>Refresh</button>
+        </div>
+      </div>
+      <Msg err={err || state.err} ok={state.ok} />
+      {loading && !data && <p className="muted">Loading cases...</p>}
+      <table>
+        <thead>
+          <tr>
+            <th>Case #</th>
+            <th>Source / Clinic</th>
+            <th>Patient</th>
+            <th>Service / Specialty</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(c => (
+            <tr key={`${c.source}-${c.id}`}>
+              <td><strong>{c.case_number}</strong></td>
+              <td>{c.hospital_name} <span className="muted">({c.source})</span></td>
+              <td>{c.patient_name}<br /><span className="muted">{c.patient_phone}</span></td>
+              <td>{c.service_type}<br /><span className="muted">{c.specialty}</span></td>
+              <td><span className="badge">{c.status}</span></td>
+              <td className="muted">{fmtDate(c.created_at)}</td>
+              <td>
+                <ActionButton
+                  okText="Deleted"
+                  onClick={() => deleteCase(c)}
+                  style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+                >
+                  Delete
+                </ActionButton>
+              </td>
+            </tr>
+          ))}
+          {!loading && rows.length === 0 && (
+            <tr><td colSpan={7} className="muted">No cases found.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 export default function Admin() {
   const { t } = useI18n();
   const [tab, setTab] = useState('staff');
   const tabs = [
     ['staff', 'staffMgmt'],
+    ['cases', 'casesAdmin'],
     ['consultants', 'intlConsultants'],
     ['hospitals', 'hospitalsAdmin'],
     ['specialties', 'specialtiesAdmin'],
@@ -948,6 +1035,7 @@ export default function Admin() {
         {tabs.map(([key, label]) => <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{t(label)}</button>)}
       </div>
       {tab === 'staff' && <StaffTab />}
+      {tab === 'cases' && <CasesTab />}
       {tab === 'consultants' && <ConsultantsTab />}
       {tab === 'hospitals' && <HospitalsTab />}
       {tab === 'specialties' && <SpecialtiesTab />}

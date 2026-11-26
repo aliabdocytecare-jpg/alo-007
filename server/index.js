@@ -214,6 +214,8 @@ api.patch('/admin/settings/whatsapp', requireRole('admin'), admin.updateWhatsApp
 api.get('/admin/settings/whatsapp/templates', requireRole('admin'), admin.listWhatsAppTemplates);
 api.post('/admin/settings/whatsapp/test', requireRole('admin'), admin.testWhatsApp);
 api.get('/admin/audit-logs', requireRole('admin'), admin.listAudit);
+api.get('/admin/cases', requireRole('admin'), admin.listAllCases);
+api.delete('/admin/cases/:source/:id', requireRole('admin'), admin.deleteCaseCompletely);
 
 // ---- Hospital Tenancy Management (ALO Admin scope — DEC-056) ----
 api.get('/admin/hospitals', requireRole('admin'), hospAdmin.listHospitals);
