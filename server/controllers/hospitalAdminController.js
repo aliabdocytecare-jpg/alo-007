@@ -120,12 +120,41 @@ export const deleteHospital = ah(async (req, res) => {
   const { data: existing } = await db.from('hospitals').select('id, name').eq('id', id).maybeSingle();
   if (!existing) throw httpError(404, 'Hospital not found');
 
-  // Remove affiliated hospital staff records first to avoid FK blocks on test/unused hospitals
-  await db.from('staff_users').delete().eq('hospital_id', id);
+  const { data: hDocs } = await db.from('hospital_documents').select('storage_path').eq('hospital_id', id);
+  const paths = (hDocs || []).map(d => d.storage_path).filter(Boolean);
+
+  await Promise.all([
+    db.from('hospital_lab_comments').delete().eq('hospital_id', id),
+    db.from('hospital_lab_tests').delete().eq('hospital_id', id),
+    db.from('hospital_medications').delete().eq('hospital_id', id),
+    db.from('hospital_documents').delete().eq('hospital_id', id),
+    db.from('hospital_case_timeline').delete().eq('hospital_id', id),
+    db.from('hospital_invoices').delete().eq('hospital_id', id),
+    db.from('international_opinion_requests').delete().eq('hospital_id', id)
+  ]);
+
+  await Promise.all([
+    db.from('hospital_appointment_requests').delete().eq('hospital_id', id),
+    db.from('hospital_slots').delete().eq('hospital_id', id),
+    db.from('hospital_slot_templates').delete().eq('hospital_id', id),
+    db.from('hospital_test_catalogue').delete().eq('hospital_id', id)
+  ]);
+
+  await db.from('hospital_cases').delete().eq('hospital_id', id);
+  await db.from('hospital_patients').delete().eq('hospital_id', id);
+  await Promise.all([
+    db.from('staff_users').delete().eq('hospital_id', id),
+    db.from('notifications').delete().eq('hospital_id', id),
+    db.from('audit_log').delete().eq('hospital_id', id)
+  ]);
 
   const { error } = await db.from('hospitals').delete().eq('id', id);
   if (error) {
-    throw httpError(409, `Cannot delete hospital "${existing.name}" because it has linked clinical cases or invoices. Deactivate it instead.`);
+    throw httpError(409, `Cannot delete hospital "${existing.name}": ${error.message}`);
+  }
+
+  if (paths.length) {
+    await db.storage.from('case-documents').remove(paths).catch(() => {});
   }
 
   await audit(req, 'HOSPITAL_DELETED', {
@@ -134,7 +163,7 @@ export const deleteHospital = ah(async (req, res) => {
     detail: { name: existing.name }
   });
 
-  res.json({ ok: true, message: `Hospital "${existing.name}" deleted.` });
+  res.json({ ok: true, message: `Hospital "${existing.name}" and all connected records deleted.` });
 });
 
 /**

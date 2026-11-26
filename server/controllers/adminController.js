@@ -459,6 +459,7 @@ async function purgeHospitalCase(hospCaseId) {
     .eq('hospital_case_id', hospCaseId);
 
   await Promise.all([
+    db.from('hospital_lab_comments').delete().eq('hospital_case_id', hospCaseId),
     db.from('hospital_lab_tests').delete().eq('hospital_case_id', hospCaseId),
     db.from('hospital_medications').delete().eq('hospital_case_id', hospCaseId),
     db.from('hospital_documents').delete().eq('hospital_case_id', hospCaseId),
@@ -475,81 +476,7 @@ async function purgeHospitalCase(hospCaseId) {
   }
 }
 
-export const listAllCases = ah(async (req, res) => {
-  const [{ data: aloCases, error: aloErr }, { data: hospCases, error: hospErr }] = await Promise.all([
-    db.from('cases').select('id, case_number, patient_id, service_type, service_subtype, specialty, status, reason, created_at').order('created_at', { ascending: false }),
-    db.from('hospital_cases').select('id, case_number, hospital_id, hospital_patient_id, alo_case_id, service_type, requested_specialty, status, arrival_status, checkin_code, created_at').order('created_at', { ascending: false })
-  ]);
-  if (aloErr) throw httpError(500, aloErr.message);
-  if (hospErr) throw httpError(500, hospErr.message);
-
-  const pIds = [...new Set((aloCases || []).map(c => c.patient_id).filter(Boolean))];
-  const hpIds = [...new Set((hospCases || []).map(c => c.hospital_patient_id).filter(Boolean))];
-  const hIds = [...new Set((hospCases || []).map(c => c.hospital_id).filter(Boolean))];
-
-  const [{ data: patients }, { data: hPatients }, { data: hospitals }] = await Promise.all([
-    pIds.length ? db.from('patients').select('id, full_name, phone').in('id', pIds) : Promise.resolve({ data: [] }),
-    hpIds.length ? db.from('hospital_patients').select('id, full_name, mrn, phone').in('id', hpIds) : Promise.resolve({ data: [] }),
-    hIds.length ? db.from('hospitals').select('id, name').in('id', hIds) : Promise.resolve({ data: [] })
-  ]);
-
-  const pMap = Object.fromEntries((patients || []).map(p => [p.id, p]));
-  const hpMap = Object.fromEntries((hPatients || []).map(p => [p.id, p]));
-  const hMap = Object.fromEntries((hospitals || []).map(h => [h.id, h.name]));
-  const hospByAlo = Object.fromEntries((hospCases || []).filter(h => h.alo_case_id).map(h => [h.alo_case_id, h]));
-  const aloIdSet = new Set((aloCases || []).map(c => c.id));
-
-  const items = [
-    ...(aloCases || []).map(c => {
-      const linkedHosp = hospByAlo[c.id];
-      return {
-        id: c.id,
-        source: 'ALO',
-        case_number: c.case_number,
-        patient_name: pMap[c.patient_id]?.full_name || '—',
-        patient_phone: pMap[c.patient_id]?.phone || '—',
-        service_type: c.service_subtype ? `${c.service_type} / ${c.service_subtype}` : c.service_type,
-        specialty: c.specialty || '—',
-        status: c.status,
-        hospital_name: linkedHosp ? (hMap[linkedHosp.hospital_id] || 'Partner Hospital') : 'ALO Central',
-        created_at: c.created_at
-      };
-    }),
-    ...(hospCases || [])
-      .filter(hc => !hc.alo_case_id || !aloIdSet.has(hc.alo_case_id))
-      .map(hc => ({
-        id: hc.id,
-        source: 'HOSPITAL',
-        case_number: hc.case_number,
-        patient_name: hpMap[hc.hospital_patient_id]?.full_name || '—',
-        patient_phone: hpMap[hc.hospital_patient_id]?.phone || hpMap[hc.hospital_patient_id]?.mrn || '—',
-        service_type: hc.service_type || 'day_clinic',
-        specialty: hc.requested_specialty || '—',
-        status: hc.status,
-        hospital_name: hMap[hc.hospital_id] || 'Hospital',
-        created_at: hc.created_at
-      }))
-  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-  res.json(items);
-});
-
-export const deleteCaseCompletely = ah(async (req, res) => {
-  const source = String(req.params.source || '').toUpperCase();
-  const { id } = req.params;
-  if (!['ALO', 'HOSPITAL'].includes(source)) throw httpError(400, 'Invalid case source.');
-
-  if (source === 'HOSPITAL') {
-    const { data: hc } = await db.from('hospital_cases').select('id, case_number').eq('id', id).maybeSingle();
-    if (!hc) throw httpError(404, 'Hospital case not found.');
-    await purgeHospitalCase(id);
-    await audit(req, 'ADMIN_CASE_DELETED', { resourceType: 'hospital_case', resourceId: id, detail: { case_number: hc.case_number } });
-    return res.json({ ok: true, message: `Case ${hc.case_number} permanently deleted.` });
-  }
-
-  const { data: c } = await db.from('cases').select('id, case_number').eq('id', id).maybeSingle();
-  if (!c) throw httpError(404, 'Case not found.');
-
+async function purgeAloCase(id) {
   const [{ data: docs }, { data: revs }, { data: linkedHosps }] = await Promise.all([
     db.from('documents').select('storage_path').eq('case_id', id),
     db.from('case_reviews').select('voice_note_path').eq('case_id', id),
@@ -587,7 +514,279 @@ export const deleteCaseCompletely = ah(async (req, res) => {
   if (storagePaths.length) {
     await db.storage.from('case-documents').remove(storagePaths).catch(() => {});
   }
+}
 
+async function purgeAloPatient(patientId) {
+  const { data: pCases } = await db.from('cases').select('id').eq('patient_id', patientId);
+  for (const c of pCases || []) {
+    await purgeAloCase(c.id);
+  }
+  await db.from('hospital_patients').update({ patient_id: null }).eq('patient_id', patientId);
+  await db.from('notifications').delete().eq('recipient_id', patientId);
+  const { error } = await db.from('patients').delete().eq('id', patientId);
+  if (error) throw httpError(500, error.message);
+}
+
+async function purgeHospitalPatient(hospPatientId) {
+  const { data: hCases } = await db.from('hospital_cases').select('id').eq('hospital_patient_id', hospPatientId);
+  for (const hc of hCases || []) {
+    await purgeHospitalCase(hc.id);
+  }
+  await db.from('hospital_appointment_requests').delete().eq('hospital_patient_id', hospPatientId);
+  const { error } = await db.from('hospital_patients').delete().eq('id', hospPatientId);
+  if (error) throw httpError(500, error.message);
+}
+
+function countBy(rows, key) {
+  const map = {};
+  for (const r of rows || []) {
+    if (r[key]) map[r[key]] = (map[r[key]] || 0) + 1;
+  }
+  return map;
+}
+
+export const listAllCases = ah(async (req, res) => {
+  const [{ data: aloCases, error: aloErr }, { data: hospCases, error: hospErr }] = await Promise.all([
+    db.from('cases').select('id, case_number, patient_id, service_type, service_subtype, specialty, status, reason, created_at').order('created_at', { ascending: false }),
+    db.from('hospital_cases').select('id, case_number, hospital_id, hospital_patient_id, alo_case_id, service_type, requested_specialty, status, arrival_status, checkin_code, created_at').order('created_at', { ascending: false })
+  ]);
+  if (aloErr) throw httpError(500, aloErr.message);
+  if (hospErr) throw httpError(500, hospErr.message);
+
+  const pIds = [...new Set((aloCases || []).map(c => c.patient_id).filter(Boolean))];
+  const hpIds = [...new Set((hospCases || []).map(c => c.hospital_patient_id).filter(Boolean))];
+  const hIds = [...new Set((hospCases || []).map(c => c.hospital_id).filter(Boolean))];
+  const cIds = (aloCases || []).map(c => c.id);
+  const hcIds = (hospCases || []).map(c => c.id);
+
+  const [
+    { data: patients },
+    { data: hPatients },
+    { data: hospitals },
+    { data: docs },
+    { data: revs },
+    { data: rxs },
+    { data: labs },
+    { data: meds }
+  ] = await Promise.all([
+    pIds.length ? db.from('patients').select('id, full_name, phone').in('id', pIds) : Promise.resolve({ data: [] }),
+    hpIds.length ? db.from('hospital_patients').select('id, full_name, mrn, phone').in('id', hpIds) : Promise.resolve({ data: [] }),
+    hIds.length ? db.from('hospitals').select('id, name').in('id', hIds) : Promise.resolve({ data: [] }),
+    cIds.length ? db.from('documents').select('case_id').in('case_id', cIds).eq('is_deleted', false) : Promise.resolve({ data: [] }),
+    cIds.length ? db.from('case_reviews').select('case_id').in('case_id', cIds) : Promise.resolve({ data: [] }),
+    cIds.length ? db.from('prescriptions').select('case_id').in('case_id', cIds) : Promise.resolve({ data: [] }),
+    hcIds.length ? db.from('hospital_lab_tests').select('hospital_case_id').in('hospital_case_id', hcIds) : Promise.resolve({ data: [] }),
+    hcIds.length ? db.from('hospital_medications').select('hospital_case_id').in('hospital_case_id', hcIds) : Promise.resolve({ data: [] })
+  ]);
+
+  const pMap = Object.fromEntries((patients || []).map(p => [p.id, p]));
+  const hpMap = Object.fromEntries((hPatients || []).map(p => [p.id, p]));
+  const hMap = Object.fromEntries((hospitals || []).map(h => [h.id, h.name]));
+  const hospByAlo = Object.fromEntries((hospCases || []).filter(h => h.alo_case_id).map(h => [h.alo_case_id, h]));
+  const aloIdSet = new Set(cIds);
+
+  const docCount = countBy(docs, 'case_id');
+  const revCount = countBy(revs, 'case_id');
+  const rxCount = countBy(rxs, 'case_id');
+  const labCount = countBy(labs, 'hospital_case_id');
+  const medCount = countBy(meds, 'hospital_case_id');
+
+  const items = [
+    ...(aloCases || []).map(c => {
+      const linkedHosp = hospByAlo[c.id];
+      return {
+        id: c.id,
+        source: 'ALO',
+        case_number: c.case_number,
+        patient_name: pMap[c.patient_id]?.full_name || '—',
+        patient_phone: pMap[c.patient_id]?.phone || '—',
+        service_type: c.service_subtype ? `${c.service_type} / ${c.service_subtype}` : c.service_type,
+        specialty: c.specialty || '—',
+        status: c.status,
+        hospital_name: linkedHosp ? (hMap[linkedHosp.hospital_id] || 'Partner Hospital') : 'ALO Central',
+        docs_count: docCount[c.id] || 0,
+        reviews_count: revCount[c.id] || 0,
+        rx_count: (rxCount[c.id] || 0) + (linkedHosp ? (medCount[linkedHosp.id] || 0) : 0),
+        labs_count: linkedHosp ? (labCount[linkedHosp.id] || 0) : 0,
+        created_at: c.created_at
+      };
+    }),
+    ...(hospCases || [])
+      .filter(hc => !hc.alo_case_id || !aloIdSet.has(hc.alo_case_id))
+      .map(hc => ({
+        id: hc.id,
+        source: 'HOSPITAL',
+        case_number: hc.case_number,
+        patient_name: hpMap[hc.hospital_patient_id]?.full_name || '—',
+        patient_phone: hpMap[hc.hospital_patient_id]?.phone || hpMap[hc.hospital_patient_id]?.mrn || '—',
+        service_type: hc.service_type || 'day_clinic',
+        specialty: hc.requested_specialty || '—',
+        status: hc.status,
+        hospital_name: hMap[hc.hospital_id] || 'Hospital',
+        docs_count: 0,
+        reviews_count: 0,
+        rx_count: medCount[hc.id] || 0,
+        labs_count: labCount[hc.id] || 0,
+        created_at: hc.created_at
+      }))
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  res.json(items);
+});
+
+export const deleteCaseCompletely = ah(async (req, res) => {
+  const source = String(req.params.source || '').toUpperCase();
+  const { id } = req.params;
+  if (!['ALO', 'HOSPITAL'].includes(source)) throw httpError(400, 'Invalid case source.');
+
+  if (source === 'HOSPITAL') {
+    const { data: hc } = await db.from('hospital_cases').select('id, case_number').eq('id', id).maybeSingle();
+    if (!hc) throw httpError(404, 'Hospital case not found.');
+    await purgeHospitalCase(id);
+    await audit(req, 'ADMIN_CASE_DELETED', { resourceType: 'hospital_case', resourceId: id, detail: { case_number: hc.case_number } });
+    return res.json({ ok: true, message: `Case ${hc.case_number} permanently deleted.` });
+  }
+
+  const { data: c } = await db.from('cases').select('id, case_number').eq('id', id).maybeSingle();
+  if (!c) throw httpError(404, 'Case not found.');
+  await purgeAloCase(id);
   await audit(req, 'ADMIN_CASE_DELETED', { resourceType: 'case', resourceId: id, detail: { case_number: c.case_number } });
   res.json({ ok: true, message: `Case ${c.case_number} permanently deleted.` });
+});
+
+export const bulkDeleteCases = ah(async (req, res) => {
+  const { all, items } = req.body || {};
+  let targets = Array.isArray(items) ? items : [];
+
+  if (all) {
+    const [{ data: aloCases }, { data: hospCases }] = await Promise.all([
+      db.from('cases').select('id'),
+      db.from('hospital_cases').select('id, alo_case_id')
+    ]);
+    targets = [
+      ...(aloCases || []).map(c => ({ source: 'ALO', id: c.id })),
+      ...(hospCases || []).filter(hc => !hc.alo_case_id).map(hc => ({ source: 'HOSPITAL', id: hc.id }))
+    ];
+  }
+
+  let deleted = 0;
+  for (const item of targets) {
+    const src = String(item?.source || '').toUpperCase();
+    if (!item?.id) continue;
+    if (src === 'ALO') {
+      const { data: exists } = await db.from('cases').select('id').eq('id', item.id).maybeSingle();
+      if (exists) { await purgeAloCase(item.id); deleted++; }
+    } else if (src === 'HOSPITAL') {
+      const { data: exists } = await db.from('hospital_cases').select('id').eq('id', item.id).maybeSingle();
+      if (exists) { await purgeHospitalCase(item.id); deleted++; }
+    }
+  }
+
+  await audit(req, 'ADMIN_CASES_BULK_DELETED', { resourceType: 'case', detail: { deleted, all: !!all } });
+  res.json({ ok: true, deleted, message: `${deleted} case(s) permanently deleted.` });
+});
+
+export const listAllPatients = ah(async (req, res) => {
+  const [
+    { data: aloPatients, error: pErr },
+    { data: hospPatients, error: hpErr },
+    { data: hospitals },
+    { data: aloCases },
+    { data: hospCases }
+  ] = await Promise.all([
+    db.from('patients').select('id, full_name, phone, email, dob, gender, nationality, national_id, created_at').order('created_at', { ascending: false }),
+    db.from('hospital_patients').select('id, hospital_id, patient_id, mrn, full_name, phone, dob, gender, created_at').order('created_at', { ascending: false }),
+    db.from('hospitals').select('id, name'),
+    db.from('cases').select('id, patient_id'),
+    db.from('hospital_cases').select('id, hospital_patient_id')
+  ]);
+  if (pErr) throw httpError(500, pErr.message);
+  if (hpErr) throw httpError(500, hpErr.message);
+
+  const hMap = Object.fromEntries((hospitals || []).map(h => [h.id, h.name]));
+  const aloCaseCount = countBy(aloCases, 'patient_id');
+  const hospCaseCount = countBy(hospCases, 'hospital_patient_id');
+
+  const items = [
+    ...(aloPatients || []).map(p => ({
+      id: p.id,
+      source: 'ALO',
+      full_name: p.full_name || '—',
+      phone: p.phone || '—',
+      email: p.email || '—',
+      dob: p.dob || '—',
+      gender: p.gender || '—',
+      identifier: p.national_id || '—',
+      hospital_name: 'ALO Portal',
+      cases_count: aloCaseCount[p.id] || 0,
+      created_at: p.created_at
+    })),
+    ...(hospPatients || []).map(hp => ({
+      id: hp.id,
+      source: 'HOSPITAL',
+      full_name: hp.full_name || '—',
+      phone: hp.phone || '—',
+      email: '—',
+      dob: hp.dob || '—',
+      gender: hp.gender || '—',
+      identifier: hp.mrn ? `MRN: ${hp.mrn}` : '—',
+      hospital_name: hMap[hp.hospital_id] || 'Hospital',
+      cases_count: hospCaseCount[hp.id] || 0,
+      created_at: hp.created_at
+    }))
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  res.json(items);
+});
+
+export const deletePatientCompletely = ah(async (req, res) => {
+  const source = String(req.params.source || '').toUpperCase();
+  const { id } = req.params;
+  if (!['ALO', 'HOSPITAL'].includes(source)) throw httpError(400, 'Invalid patient source.');
+
+  if (source === 'HOSPITAL') {
+    const { data: hp } = await db.from('hospital_patients').select('id, full_name').eq('id', id).maybeSingle();
+    if (!hp) throw httpError(404, 'Hospital patient not found.');
+    await purgeHospitalPatient(id);
+    await audit(req, 'ADMIN_PATIENT_DELETED', { resourceType: 'hospital_patient', resourceId: id, detail: { full_name: hp.full_name } });
+    return res.json({ ok: true, message: `Patient "${hp.full_name}" permanently deleted.` });
+  }
+
+  const { data: p } = await db.from('patients').select('id, full_name').eq('id', id).maybeSingle();
+  if (!p) throw httpError(404, 'Patient not found.');
+  await purgeAloPatient(id);
+  await audit(req, 'ADMIN_PATIENT_DELETED', { resourceType: 'patient', resourceId: id, detail: { full_name: p.full_name } });
+  res.json({ ok: true, message: `Patient "${p.full_name}" permanently deleted.` });
+});
+
+export const bulkDeletePatients = ah(async (req, res) => {
+  const { all, items } = req.body || {};
+  let targets = Array.isArray(items) ? items : [];
+
+  if (all) {
+    const [{ data: aloPatients }, { data: hospPatients }] = await Promise.all([
+      db.from('patients').select('id'),
+      db.from('hospital_patients').select('id')
+    ]);
+    targets = [
+      ...(aloPatients || []).map(p => ({ source: 'ALO', id: p.id })),
+      ...(hospPatients || []).map(hp => ({ source: 'HOSPITAL', id: hp.id }))
+    ];
+  }
+
+  let deleted = 0;
+  for (const item of targets) {
+    const src = String(item?.source || '').toUpperCase();
+    if (!item?.id) continue;
+    if (src === 'ALO') {
+      const { data: exists } = await db.from('patients').select('id').eq('id', item.id).maybeSingle();
+      if (exists) { await purgeAloPatient(item.id); deleted++; }
+    } else if (src === 'HOSPITAL') {
+      const { data: exists } = await db.from('hospital_patients').select('id').eq('id', item.id).maybeSingle();
+      if (exists) { await purgeHospitalPatient(item.id); deleted++; }
+    }
+  }
+
+  await audit(req, 'ADMIN_PATIENTS_BULK_DELETED', { resourceType: 'patient', detail: { deleted, all: !!all } });
+  res.json({ ok: true, deleted, message: `${deleted} patient(s) permanently deleted.` });
 });

@@ -930,6 +930,7 @@ function ConsultantsTab() {
 function CasesTab() {
   const { data, err, loading, reload } = useAsync(() => api.get('/admin/cases').then(r => r.data));
   const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState({});
   const [state, setState] = useState({ err: '', ok: '' });
 
   const q = search.trim().toLowerCase();
@@ -942,6 +943,20 @@ function CasesTab() {
     (c.status || '').toLowerCase().includes(q)
   );
 
+  const keyOf = c => `${c.source}:${c.id}`;
+  const selectedRows = rows.filter(c => selected[keyOf(c)]);
+  const allChecked = rows.length > 0 && selectedRows.length === rows.length;
+
+  const toggleAll = () => {
+    if (allChecked) setSelected({});
+    else setSelected(Object.fromEntries(rows.map(c => [keyOf(c), true])));
+  };
+
+  const toggleOne = c => {
+    const k = keyOf(c);
+    setSelected(prev => ({ ...prev, [k]: !prev[k] }));
+  };
+
   const deleteCase = async (c) => {
     const msg = `Permanently delete Case "${c.case_number}" (${c.patient_name})?\n\nAll case history, documents, reviews, prescriptions, and lab records will be removed from the database. This cannot be undone.`;
     if (!window.confirm(msg)) return false;
@@ -949,6 +964,39 @@ function CasesTab() {
     try {
       const res = await api.delete(`/admin/cases/${c.source}/${c.id}`);
       setState({ ok: res.data?.message || `Case ${c.case_number} deleted.`, err: '' });
+      setSelected(prev => { const n = { ...prev }; delete n[keyOf(c)]; return n; });
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+      throw e;
+    }
+  };
+
+  const deleteSelected = async () => {
+    if (!selectedRows.length) return false;
+    if (!window.confirm(`Permanently delete ${selectedRows.length} selected case(s) and all connected records from the database?`)) return false;
+    setState({ err: '', ok: '' });
+    try {
+      const res = await api.post('/admin/cases/bulk-delete', {
+        items: selectedRows.map(c => ({ source: c.source, id: c.id }))
+      });
+      setState({ ok: res.data?.message || 'Selected cases deleted.', err: '' });
+      setSelected({});
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+      throw e;
+    }
+  };
+
+  const deleteAll = async () => {
+    if (!rows.length) return false;
+    if (!window.confirm(`WARNING: Permanently delete ALL ${(data || []).length} cases and all connected documents, lab tests, prescriptions, and reviews from the database?`)) return false;
+    setState({ err: '', ok: '' });
+    try {
+      const res = await api.post('/admin/cases/bulk-delete', { all: true });
+      setState({ ok: res.data?.message || 'All cases deleted.', err: '' });
+      setSelected({});
       reload();
     } catch (e) {
       setState({ err: errMsg(e), ok: '' });
@@ -958,16 +1006,32 @@ function CasesTab() {
 
   return (
     <section className="box">
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ margin: 0 }}>All Cases ({rows.length})</h2>
-        <div className="row" style={{ gap: 8 }}>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <input
             placeholder="Search Case #, Patient, Phone, Status..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            style={{ maxWidth: 280 }}
+            style={{ maxWidth: 260 }}
           />
           <button onClick={reload}>Refresh</button>
+          <ActionButton
+            okText="Deleted"
+            disabled={selectedRows.length === 0}
+            onClick={deleteSelected}
+            style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+          >
+            Delete Selected ({selectedRows.length})
+          </ActionButton>
+          <ActionButton
+            okText="All Deleted"
+            disabled={(data || []).length === 0}
+            onClick={deleteAll}
+            style={{ background: '#dc2626', color: '#fff', borderColor: '#dc2626' }}
+          >
+            Delete All
+          </ActionButton>
         </div>
       </div>
       <Msg err={err || state.err} ok={state.ok} />
@@ -975,10 +1039,12 @@ function CasesTab() {
       <table>
         <thead>
           <tr>
+            <th><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
             <th>Case #</th>
             <th>Source / Clinic</th>
             <th>Patient</th>
             <th>Service / Specialty</th>
+            <th>Connected Data</th>
             <th>Status</th>
             <th>Created</th>
             <th>Action</th>
@@ -986,11 +1052,16 @@ function CasesTab() {
         </thead>
         <tbody>
           {rows.map(c => (
-            <tr key={`${c.source}-${c.id}`}>
+            <tr key={keyOf(c)}>
+              <td><input type="checkbox" checked={!!selected[keyOf(c)]} onChange={() => toggleOne(c)} /></td>
               <td><strong>{c.case_number}</strong></td>
               <td>{c.hospital_name} <span className="muted">({c.source})</span></td>
               <td>{c.patient_name}<br /><span className="muted">{c.patient_phone}</span></td>
               <td>{c.service_type}<br /><span className="muted">{c.specialty}</span></td>
+              <td className="muted" style={{ fontSize: 12 }}>
+                Docs: {c.docs_count} · Rev: {c.reviews_count}<br />
+                Rx: {c.rx_count} · Labs: {c.labs_count}
+              </td>
               <td><span className="badge">{c.status}</span></td>
               <td className="muted">{fmtDate(c.created_at)}</td>
               <td>
@@ -1005,7 +1076,160 @@ function CasesTab() {
             </tr>
           ))}
           {!loading && rows.length === 0 && (
-            <tr><td colSpan={7} className="muted">No cases found.</td></tr>
+            <tr><td colSpan={9} className="muted">No cases found.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function PatientsTab() {
+  const { data, err, loading, reload } = useAsync(() => api.get('/admin/patients').then(r => r.data));
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState({});
+  const [state, setState] = useState({ err: '', ok: '' });
+
+  const q = search.trim().toLowerCase();
+  const rows = (data || []).filter(p =>
+    !q ||
+    (p.full_name || '').toLowerCase().includes(q) ||
+    (p.phone || '').toLowerCase().includes(q) ||
+    (p.identifier || '').toLowerCase().includes(q) ||
+    (p.hospital_name || '').toLowerCase().includes(q)
+  );
+
+  const keyOf = p => `${p.source}:${p.id}`;
+  const selectedRows = rows.filter(p => selected[keyOf(p)]);
+  const allChecked = rows.length > 0 && selectedRows.length === rows.length;
+
+  const toggleAll = () => {
+    if (allChecked) setSelected({});
+    else setSelected(Object.fromEntries(rows.map(p => [keyOf(p), true])));
+  };
+
+  const toggleOne = p => {
+    const k = keyOf(p);
+    setSelected(prev => ({ ...prev, [k]: !prev[k] }));
+  };
+
+  const deletePatient = async (p) => {
+    const msg = `Permanently delete Patient "${p.full_name}" (${p.phone}) and all ${p.cases_count} linked case(s)?\n\nThis cannot be undone.`;
+    if (!window.confirm(msg)) return false;
+    setState({ err: '', ok: '' });
+    try {
+      const res = await api.delete(`/admin/patients/${p.source}/${p.id}`);
+      setState({ ok: res.data?.message || `Patient "${p.full_name}" deleted.`, err: '' });
+      setSelected(prev => { const n = { ...prev }; delete n[keyOf(p)]; return n; });
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+      throw e;
+    }
+  };
+
+  const deleteSelected = async () => {
+    if (!selectedRows.length) return false;
+    if (!window.confirm(`Permanently delete ${selectedRows.length} selected patient(s) and all their linked cases from the database?`)) return false;
+    setState({ err: '', ok: '' });
+    try {
+      const res = await api.post('/admin/patients/bulk-delete', {
+        items: selectedRows.map(p => ({ source: p.source, id: p.id }))
+      });
+      setState({ ok: res.data?.message || 'Selected patients deleted.', err: '' });
+      setSelected({});
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+      throw e;
+    }
+  };
+
+  const deleteAll = async () => {
+    if (!rows.length) return false;
+    if (!window.confirm(`WARNING: Permanently delete ALL ${(data || []).length} patients and ALL their linked cases & records from the database?`)) return false;
+    setState({ err: '', ok: '' });
+    try {
+      const res = await api.post('/admin/patients/bulk-delete', { all: true });
+      setState({ ok: res.data?.message || 'All patients deleted.', err: '' });
+      setSelected({});
+      reload();
+    } catch (e) {
+      setState({ err: errMsg(e), ok: '' });
+      throw e;
+    }
+  };
+
+  return (
+    <section className="box">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+        <h2 style={{ margin: 0 }}>All Patients ({rows.length})</h2>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <input
+            placeholder="Search Name, Phone, MRN, ID, Hospital..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ maxWidth: 260 }}
+          />
+          <button onClick={reload}>Refresh</button>
+          <ActionButton
+            okText="Deleted"
+            disabled={selectedRows.length === 0}
+            onClick={deleteSelected}
+            style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+          >
+            Delete Selected ({selectedRows.length})
+          </ActionButton>
+          <ActionButton
+            okText="All Deleted"
+            disabled={(data || []).length === 0}
+            onClick={deleteAll}
+            style={{ background: '#dc2626', color: '#fff', borderColor: '#dc2626' }}
+          >
+            Delete All
+          </ActionButton>
+        </div>
+      </div>
+      <Msg err={err || state.err} ok={state.ok} />
+      {loading && !data && <p className="muted">Loading patients...</p>}
+      <table>
+        <thead>
+          <tr>
+            <th><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
+            <th>Full Name</th>
+            <th>Phone / Email</th>
+            <th>MRN / National ID</th>
+            <th>Gender / DOB</th>
+            <th>Source / Hospital</th>
+            <th>Cases</th>
+            <th>Created</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(p => (
+            <tr key={keyOf(p)}>
+              <td><input type="checkbox" checked={!!selected[keyOf(p)]} onChange={() => toggleOne(p)} /></td>
+              <td><strong>{p.full_name}</strong></td>
+              <td>{p.phone}<br /><span className="muted">{p.email}</span></td>
+              <td>{p.identifier}</td>
+              <td className="muted">{p.gender} · {p.dob}</td>
+              <td>{p.hospital_name} <span className="muted">({p.source})</span></td>
+              <td><span className="badge">{p.cases_count}</span></td>
+              <td className="muted">{fmtDate(p.created_at)}</td>
+              <td>
+                <ActionButton
+                  okText="Deleted"
+                  onClick={() => deletePatient(p)}
+                  style={{ color: '#b91c1c', borderColor: '#fca5a5' }}
+                >
+                  Delete
+                </ActionButton>
+              </td>
+            </tr>
+          ))}
+          {!loading && rows.length === 0 && (
+            <tr><td colSpan={9} className="muted">No patients found.</td></tr>
           )}
         </tbody>
       </table>
@@ -1018,6 +1242,7 @@ export default function Admin() {
   const [tab, setTab] = useState('staff');
   const tabs = [
     ['staff', 'staffMgmt'],
+    ['patients', 'patientsAdmin'],
     ['cases', 'casesAdmin'],
     ['consultants', 'intlConsultants'],
     ['hospitals', 'hospitalsAdmin'],
@@ -1035,6 +1260,7 @@ export default function Admin() {
         {tabs.map(([key, label]) => <button key={key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{t(label)}</button>)}
       </div>
       {tab === 'staff' && <StaffTab />}
+      {tab === 'patients' && <PatientsTab />}
       {tab === 'cases' && <CasesTab />}
       {tab === 'consultants' && <ConsultantsTab />}
       {tab === 'hospitals' && <HospitalsTab />}
